@@ -90,7 +90,14 @@ async def komen_listener(event):
         return
     if not isinstance(event.message, Message):
         return
-    if not event.is_channel or event.chat is None or event.chat.username is None:
+    chat = event.chat
+
+    # harus ada username, karena kita pakai @username sebagai key channel
+    if not chat or not getattr(chat, "username", None):
+        return
+
+    # kalau channel atau group diskusi, dua2nya diterima
+    if not (event.is_channel or event.is_group):
         return
 
     channel_id = f"@{event.chat.username}".lower()
