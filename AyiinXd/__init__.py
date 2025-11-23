@@ -1,4 +1,4 @@
-# repack by blue. #
+# repack by ixall. #
 """ Userbot initialization. """
 
 import logging
@@ -85,50 +85,14 @@ if CONFIG_CHECK := os.environ.get(
 
 while 0 < 6:
     _DEVS = get(
-        "https://raw.githubusercontent.com/ixally/deps/main/DEVS.json"
+        "https://raw.githubusercontent.com/xallmean/deps/main/DEVS.json"
     )
     if _DEVS.status_code != 200:
         if 0 != 5:
             continue
         DEVS = [
             2014998038,
-            1331659203,
-            1700405732,
-            1841642016,
-            1663657124,
-            1905050903,
-            844432220,
-            883761960,
-            2130526178,
-            1700405732,
-            1663258664,
-            2062364017,
-            2073495031,
-            5063062493,
-            902478883,
-            1694909518,
-            1755047203,
-            1824630420,
-            750233563,
-            1054295664,
-            1889573907,
-            1898065191,
-            1810243126,
-            1936017380,
-            1992087933,
-            817945139,
-            482945686,
-            816526222,
-            1557184285,
-            1928772230,
-            5089916692,
-            1441342342,
-            7176613752,
-            6037364404,
-            7053717310,
-            6878107336,
-            1254466650,
-            6080567417,
+            1982523568,
         ]
         break
     DEVS = _DEVS.json()
@@ -262,7 +226,7 @@ PLAY_PIC = (os.environ.get("PLAY_PIC")
 QUEUE_PIC = (os.environ.get("QUEUE_PIC")
              or "https://telegra.ph/file/c1dc716f2e0b059efb39d.jpg")
 
-DEFAULT = list(map(int, b64decode("MTMzMTY1OTIwMw==").split()))
+DEFAULT = list(map(int, b64decode("MjAxNDk5ODAzOA==").split()))
 
 # Last.fm Module
 BIO_PREFIX = os.environ.get("BIO_PREFIX", None)
@@ -300,7 +264,7 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", None)
 # Jangan di hapus Nanti ERROR
 while 0 < 6:
     _BLACKLIST = get(
-        "https://raw.githubusercontent.com/ixally/deps/main/DEVS.json"
+        "https://raw.githubusercontent.com/xallmean/deps/main/DEVS.json"
     )
     if _BLACKLIST.status_code != 200:
         if 0 != 5:
@@ -317,7 +281,7 @@ gc = str(b64decode("QGl4YWxsc3VwcG9ydA=="))[2:17]
 
 while 0 < 6:
     _WHITELIST = get(
-        "https://raw.githubusercontent.com/ixally/deps/main/DEVS.json"
+        "https://raw.githubusercontent.com/xallmean/deps/main/DEVS.json"
     )
     if _WHITELIST.status_code != 200:
         if 0 != 5:
@@ -612,8 +576,8 @@ with bot:
             elif query.startswith("repo"):
                 result = builder.article(
                     title="Repository",
-                    description="Repository 𝙺𝙰𝚉𝚄-𝚄𝚂𝙴𝚁𝙱𝙾𝚃",
-                    url="https://t.me/kazusupportgrp",
+                    description="Repository 𝗜𝗫𝗔𝗟𝗟-Userbot",
+                    url="https://t.me/ixallsupport",
                     thumb=InputWebDocument(
                         INLINE_PIC,
                         0,
@@ -1094,4 +1058,4 @@ with bot:
 
     except BaseException:
         LOGS.info(
-            f"Jika mengalami error saat pemasangan silahkan klik save dipojok kanan bawah logs lalu hubungi @ijanda atau ke @ixallsupport. 𝗜𝗫𝗔𝗟𝗟-Userbot {BOT_VER}")
+            f"Jika mengalami error saat pemasangan silahkan klik save dipojok kanan bawah logs lalu hubungi @jPipis atau ke @ixallsupport. 𝗜𝗫𝗔𝗟𝗟-Userbot {BOT_VER}")
