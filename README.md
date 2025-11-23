@@ -1,18 +1,18 @@
-<h1 align="center"> ⚡ 𝙺𝙰𝚉𝚄-𝚄𝚂𝙴𝚁𝙱𝙾𝚃</h1>
+<h1 align="center"> ⚡ 𝗜𝗫𝗔𝗟𝗟-Userbot</h1>
 
-<a href="https://github.com/ionmusic/Kazu-Userbot/commits"> <img src="https://img.shields.io/github/last-commit/sip-Userbot/Nande-Telethon?color=red&logo=github&logoColor=blue&style=for-the-badge" /></a>
-[![Open Source Love](https://badges.frapsoft.com/os/v2/open-source.png?v=103)](https://github.com/ionmusic/Kazu-Userbot)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-Yes-blue)](https://github.com/ionmusic/Kazu-Userbot/graphs/commit-activity)
-[![CodeQuality](https://img.shields.io/codacy/grade/a723cb464d5a4d25be3152b5d71de82d?color=blue&logo=codacy)](https://app.codacy.com/gh/ionmusic/Kazu-Userbot/dashboard)
-[![GitHub Forks](https://img.shields.io/github/forks/ionmusic/Kazu-Userbot?&logo=github)](https://github.com/ionmusic/Kazu-Userbot/fork)
-[![GitHub Stars](https://img.shields.io/github/stars/ionmusic/Kazu-Userbot?&logo=github)](https://github.com/ionmusic/Kazu-Userbot/stargazers)
+<a href="https://github.com/xallmean/ubot/commits"> <img src="https://img.shields.io/github/last-commit/sip-Userbot/Nande-Telethon?color=red&logo=github&logoColor=blue&style=for-the-badge" /></a>
+[![Open Source Love](https://badges.frapsoft.com/os/v2/open-source.png?v=103)](https://github.com/xallmean/ubot)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-Yes-blue)](https://github.com/xallmean/ubot/graphs/commit-activity)
+[![CodeQuality](https://img.shields.io/codacy/grade/a723cb464d5a4d25be3152b5d71de82d?color=blue&logo=codacy)](https://app.codacy.com/gh/xallmean/ubot/dashboard)
+[![GitHub Forks](https://img.shields.io/github/forks/xallmean/ubot?&logo=github)](https://github.com/xallmean/ubot/fork)
+[![GitHub Stars](https://img.shields.io/github/stars/xallmean/ubot?&logo=github)](https://github.com/xallmean/ubot/stargazers)
 
 
 <p align="center">
-  <img src="https://telegra.ph/file/a38745137e65f2d74de06.jpg">
+  <img src="https://telegra.ph/file/b17248930f58bbdaf2e23.jpg">
 </p>
 
-👩‍💻 𝙺𝙰𝚉𝚄-𝚄𝚂𝙴𝚁𝙱𝙾𝚃 adalah userbot Telegram modular yang berjalan di Python3 dengan database sqlalchemy.
+👩‍💻 𝗜𝗫𝗔𝗟𝗟-Userbot adalah userbot Telegram modular yang berjalan di Python3 dengan database sqlalchemy.
 
 Berbasis [Paperplane](https://github.com/RaphielGang/Telegram-UserBot) dan [ProjectBish](https://github.com/adekmaulana/ProjectBish) userbot.
 Saya membuat repository ini untuk memilih dan menambahkan beberapa modul yang saya butuhkan dengan banyak perubahan, fitur dan modul.
@@ -37,7 +37,7 @@ Selamat bersenang-senang.
 <h4> Generate Session via Repl: </h4>    
 <p><a href="https://repl.it/@nandeestringbot/NandeString?lite=1&outputonly=1"><img src="https://img.shields.io/badge/Generate%20On%20Repl-blueviolet?style=for-the-badge&logo=appveyor" width="200""/></a></p>
 <h4> Generate Session via Telegram Kazu String Bot: </h4>    
-<p><a href="https://t.me/kazu_stringbot"><img src="https://img.shields.io/badge/TG%20String%20Kazu%20Bot-blueviolet?style=for-the-badge&logo=appveyor" width="200""/></a></p>
+<p><a href="https://t.me/stringsesi_bot"><img src="https://img.shields.io/badge/TG%20String%20Kazu%20Bot-blueviolet?style=for-the-badge&logo=appveyor" width="200""/></a></p>
     
 </details>
 
@@ -48,9 +48,9 @@ Selamat bersenang-senang.
 ### Tutorial Deploy di VPS
 
 
- • `git clone https://github.com/ionmusic/Kazu-Userbot`
+ • `git clone https://github.com/xallmean/ubot`
 
- • `cd Kazu-Userbot`
+ • `cd ubot`
 
  • `pip3 install -U -r requirements.txt`
 
@@ -62,7 +62,7 @@ Selamat bersenang-senang.
   - ketik ctrl + S
   - ctrl + X
 
- • `screen -S Kazu-Userbot`
+ • `screen -S ubot`
 
  • `bash start`
 
@@ -72,7 +72,7 @@ Selamat bersenang-senang.
 <summary><b>🔗 Deploy To Heroku</b></summary>
 <br>
 
-<p><a href="https://heroku.com/deploy?template=https://github.com/ionmusic/Kazu-Userbot"><img src="https://img.shields.io/badge/BUAT DI-HEROKU-aqua?style=plastic&logo=heroku&logoColor=gold"width="300" /></a></p>
+<p><a href="https://heroku.com/deploy?template=https://github.com/xallmean/ubot"><img src="https://img.shields.io/badge/BUAT DI-HEROKU-aqua?style=plastic&logo=heroku&logoColor=gold"width="300" /></a></p>
 
 </details>
 
