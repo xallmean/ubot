@@ -1,7 +1,7 @@
 # modules/sql_helper/autokomen_sql.py
 
 from sqlalchemy import Column, String, Text, Boolean, Integer, UniqueConstraint
-from AyiinXd.modules.sql_helper import BASE, SESSION
+from AyiinXd.modules.sql_helper.autokomen_sql import BASE, SESSION
 
 class AutoKomen(BASE):
     __tablename__ = "autokomen"
