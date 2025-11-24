@@ -21,7 +21,17 @@ from AyiinXd.modules import ALL_MODULES
 from AyiinXd.ayiin import AyiinDB, HOSTED_ON, autobot, autopilot, ayiin_version
 from sqlalchemy import create_engine, inspect, text
 from AyiinXd.modules.sql_helper import BASE
+from AyiinXd.modules.sql_helper.autokomen_sql import SESSION, AutoKomen
 
+rows = SESSION.query(AutoKomen).all()
+for r in rows:
+    r.trigger = r.trigger.lower().strip()
+    r.channel_id = r.channel_id.lower().strip()
+    if not r.channel_id.startswith("@"):
+        r.channel_id = "@" + r.channel_id
+
+SESSION.commit()
+print("Migrasi selesai!")
 
 # Auto-migrate kolom untuk tabel auto_komen
 def migrate_autokomen():
