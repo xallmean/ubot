@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, ARRAY, inspect, text
+from sqlalchemy import Column, String, Integer, Boolean, Text
 from AyiinXd.modules.sql_helper import BASE, SESSION
 
 
@@ -6,59 +6,62 @@ class AutoKomen(BASE):
     __tablename__ = "auto_komen"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    channel_id = Column(String, index=True)
-    trigger = Column(String)
-    reply = Column(String, nullable=True)
-    msg_id = Column(BigInteger, nullable=True)
-    msg_chat = Column(String, nullable=True)
-    last_msg_id = Column(BigInteger, nullable=True)
-    active = Column(Boolean, default=True)
-    blockwords = Column(ARRAY(String), default=[])
-
-    def __init__(self, channel_id, trigger, reply=None, msg_id=None, msg_chat=None):
-        self.channel_id = channel_id
-        self.trigger = trigger
-        self.reply = reply
-        self.msg_id = msg_id
-        self.msg_chat = msg_chat
+    channel_id = Column(String(100))          # @username channel
+    trigger = Column(String(100))             # selalu lowercase
+    reply = Column(Text)                      # isi teks komen
+    msg_id = Column(Integer, default=None)    # mode reply (kalau dari pesan)
+    msg_chat = Column(String(100), default=None)
+    last_msg_id = Column(Integer, default=0)
+    active = Column(Boolean, default=True)    # status aktif/nonaktif
 
 
-# --- AUTO MIGRATE ---
-def auto_migrate():
-    inspector = inspect(SESSION.bind)
-    try:
-        tables = inspector.get_table_names()
-        if "auto_komen" not in tables:
-            BASE.metadata.create_all(SESSION.bind)
-            return
+BASE.metadata.create_all(bind=SESSION.bind)
 
-        columns = [col["name"] for col in inspector.get_columns("auto_komen")]
-        if "active" not in columns:
-            SESSION.execute(text("ALTER TABLE auto_komen ADD COLUMN active BOOLEAN DEFAULT TRUE"))
-        if "blockwords" not in columns:
-            SESSION.execute(text("ALTER TABLE auto_komen ADD COLUMN blockwords TEXT[] DEFAULT '{}'::text[]"))
-        SESSION.commit()
-    except Exception as e:
-        print(f"[ERROR MIGRATE AUTOKOMEN] {e}")
-        SESSION.rollback()
+# ===================================================================
+# UTILS
+# ===================================================================
+
+def _clean_trigger(t):
+    return t.lower().strip()
+
+def _clean_channel(c):
+    if not c.startswith("@"):
+        return "@" + c
+    return c.lower().strip()
 
 
-auto_migrate()
+# ===================================================================
+# ADD FILTER / CHANNEL
+# ===================================================================
 
-
-# --- FUNGSI AUTO KOMEN ---
 def add_filter(channel_id, trigger):
-    trigger = trigger.lower().strip()
-    exist = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
+    channel_id = _clean_channel(channel_id)
+    trigger = _clean_trigger(trigger)
+
+    exist = SESSION.query(AutoKomen).filter_by(
+        channel_id=channel_id,
+        trigger=trigger
+    ).first()
+
     if not exist:
-        data = AutoKomen(channel_id, trigger)
+        data = AutoKomen(channel_id=channel_id, trigger=trigger)
         SESSION.add(data)
         SESSION.commit()
 
 
+# ===================================================================
+# SET REPLY
+# ===================================================================
+
 def set_reply(channel_id, trigger, reply=None, msg_id=None, msg_chat=None):
-    trigger = trigger.lower().strip()
-    data = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
+    channel_id = _clean_channel(channel_id)
+    trigger = _clean_trigger(trigger)
+
+    data = SESSION.query(AutoKomen).filter_by(
+        channel_id=channel_id,
+        trigger=trigger
+    ).first()
+
     if data:
         data.reply = reply
         data.msg_id = msg_id
@@ -66,92 +69,105 @@ def set_reply(channel_id, trigger, reply=None, msg_id=None, msg_chat=None):
         SESSION.commit()
 
 
-def update_last_msg(channel_id, trigger, last_id):
-    data = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
-    if data:
-        data.last_msg_id = last_id
-        SESSION.commit()
+# ===================================================================
+# DELETE
+# ===================================================================
 
+def delete_trigger(channel_id, trigger):
+    channel_id = _clean_channel(channel_id)
+    trigger = _clean_trigger(trigger)
+    SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).delete()
+    SESSION.commit()
+
+
+def delete_channel(channel_id):
+    channel_id = _clean_channel(channel_id)
+    SESSION.query(AutoKomen).filter_by(channel_id=channel_id).delete()
+    SESSION.commit()
+
+
+# ===================================================================
+# GETTERS
+# ===================================================================
 
 def get_triggers(channel_id):
-    return SESSION.query(AutoKomen).filter_by(channel_id=channel_id).all()
+    channel_id = _clean_channel(channel_id)
+    return SESSION.query(AutoKomen).filter_by(channel_id=channel_id, active=True).all()
+
+
+def get_all_channels():
+    rows = SESSION.query(AutoKomen.channel_id).distinct().all()
+    return [(c[0]) for c in rows]
 
 
 def get_all_komen():
     return SESSION.query(AutoKomen).all()
 
 
-def get_all_channels():
-    return SESSION.query(AutoKomen.channel_id).distinct().all()
+# ===================================================================
+# UPDATE LAST MSG
+# ===================================================================
 
+def update_last_msg(channel_id, trigger, msg_id):
+    channel_id = _clean_channel(channel_id)
+    trigger = _clean_trigger(trigger)
 
-def delete_channel(channel_id):
-    try:
-        SESSION.query(AutoKomen).filter_by(channel_id=channel_id).delete()
+    row = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
+    if row:
+        row.last_msg_id = msg_id
         SESSION.commit()
-    except Exception:
-        SESSION.rollback()
-        raise
 
 
-def delete_trigger(channel_id, trigger):
+# ===================================================================
+# ACTIVE / DEACTIVE
+# ===================================================================
+
+def deactivate_channel(channel_id):
+    channel_id = _clean_channel(channel_id)
+    SESSION.query(AutoKomen).filter_by(channel_id=channel_id).update({"active": False})
+    SESSION.commit()
+
+
+def activate_channel(channel_id):
+    channel_id = _clean_channel(channel_id)
+    SESSION.query(AutoKomen).filter_by(channel_id=channel_id).update({"active": True})
+    SESSION.commit()
+
+
+# ===================================================================
+# BLOCKWORDS GLOBAL
+# ===================================================================
+
+def get_blockwords():
     try:
-        SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).delete()
-        SESSION.commit()
-    except Exception:
-        SESSION.rollback()
-        raise
+        with open("blockwords.txt", "r") as f:
+            return [w.strip() for w in f.readlines() if w.strip()]
+    except FileNotFoundError:
+        return []
 
 
-# --- BLOCKWORDS GLOBAL ---
 def add_blockwords_global(words):
-    """
-    Tambah banyak kata block sekaligus (dipisah spasi)
-    Contoh: add_blockwords_global("sfs auto viu prem jaseb telegram")
-    """
-    try:
-        word_list = [w.lower().strip() for w in words.split() if w.strip()]
-        if not word_list:
-            return 0
+    words = words.split()
+    exist = set(get_blockwords())
+    new_words = []
 
-        rows = SESSION.query(AutoKomen).all()
-        for row in rows:
-            existing = set(row.blockwords or [])
-            existing.update(word_list)
-            row.blockwords = list(existing)
+    for w in words:
+        w = w.lower().strip()
+        if w not in exist:
+            new_words.append(w)
 
-        SESSION.commit()
-        return len(word_list)
-    except Exception as e:
-        print(f"[SQL] add_blockwords_global error: {e}")
-        SESSION.rollback()
-        return 0
+    with open("blockwords.txt", "a") as f:
+        for w in new_words:
+            f.write(w + "\n")
+
+    return len(new_words)
 
 
 def del_blockword_global(word):
-    """Hapus satu kata block dari semua channel"""
-    try:
-        word = word.lower().strip()
-        rows = SESSION.query(AutoKomen).all()
-        for row in rows:
-            if row.blockwords and word in row.blockwords:
-                updated = [w for w in row.blockwords if w != word]
-                row.blockwords = updated
-        SESSION.commit()
-    except Exception as e:
-        print(f"[SQL] del_blockword_global error: {e}")
-        SESSION.rollback()
+    word = word.lower().strip()
+    existing = get_blockwords()
 
-
-def get_blockwords():
-    """Ambil semua blockword global"""
-    try:
-        rows = SESSION.query(AutoKomen.blockwords).all()
-        words = set()
-        for row in rows:
-            if row.blockwords:
-                words.update([w.lower() for w in row.blockwords])
-        return list(words)
-    except Exception as e:
-        print(f"[SQL] get_blockwords error: {e}")
-        return []
+    with open("blockwords.txt", "w") as f:
+        for w in existing:
+            if w != word:
+                f.write(w + "\n")
