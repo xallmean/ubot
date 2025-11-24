@@ -48,6 +48,7 @@ auto_migrate()
 
 # --- FUNGSI AUTO KOMEN ---
 def add_filter(channel_id, trigger):
+    trigger = trigger.lower().strip()
     exist = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
     if not exist:
         data = AutoKomen(channel_id, trigger)
@@ -56,6 +57,7 @@ def add_filter(channel_id, trigger):
 
 
 def set_reply(channel_id, trigger, reply=None, msg_id=None, msg_chat=None):
+    trigger = trigger.lower().strip()
     data = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
     if data:
         data.reply = reply
