@@ -296,7 +296,7 @@ async def auto_resume_spam_startup():
 
                     for g in grups:
                         try:
-                            await bot.send_message(g, teks, parse_mode="html")
+                            await bot.send_message(g, teks)
                             berhasil.append(g)
                         except Exception as e:
                             gagal.append((g, str(e)))
@@ -319,7 +319,7 @@ async def auto_resume_spam_startup():
                         log += "• tidak ada"
 
                     try:
-                        await bot.send_message(BOTLOG_CHATID, log, parse_mode="md")
+                        await bot.send_message(BOTLOG_CHATID, log)
                     except Exception as logerr:
                         print(f"[AUTO RESUME SPAM LOG ERROR] {logerr}")
 
