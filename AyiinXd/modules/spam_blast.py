@@ -64,27 +64,38 @@ async def onspamloop(event):
     await event.edit(f"⎋ spam `{nama}` sedang dimulai!")
 
     async def spam_loop():
+        loop_ke = 0    # ➜ counter dimulai di sini
+
         try:
             while True:
-                grups = spam_sql.get_groups(nama)               # selalu refresh
+                loop_ke += 1  # ➜ tiap putaran naik 1
+
+                grups = spam_sql.get_groups(nama)
                 berhasil, gagal = [], []
+
                 for g in grups:
                     try:
                         if media:
-                            await event.client.send_file(g, media,
-                                                        caption=teks or "", parse_mode="html")
+                            await event.client.send_file(
+                                g, media, caption=teks or "", parse_mode="html"
+                            )
                         else:
                             await event.client.send_message(g, teks, parse_mode="html")
                         berhasil.append(g)
                     except Exception as e:
                         gagal.append((g, str(e)))
 
-                log = f"⎈ **SPAM `{nama}`**\n\n"
+                # === LOG + LOOP KE ===
+                log = f"⎈ **SPAM `{nama}`**\n"
+                log += f"🌀 **Loop ke:** `{loop_ke}`\n\n"
+
                 if berhasil:
                     log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + \
-                           "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
+                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
+                        f"• `{x}` karena `{e}`"
+                        for x, e in gagal
+                    )
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
@@ -92,6 +103,7 @@ async def onspamloop(event):
                     print(f"[SPAM LOG ERROR] {logerr}")
 
                 await asyncio.sleep(delay)
+
         except asyncio.CancelledError:
             print(f"[SPAM] Loop `{nama}` dihentikan.")
 
@@ -108,7 +120,7 @@ async def onfwloop(event):
     data = spam_sql.get_list(nama)
     data.is_active = True
     SESSION.commit()
-    
+
     if nama in active_spams:
         return await event.edit(f"∅ spam forward `{nama}` sudah berjalan!")
 
@@ -117,16 +129,22 @@ async def onfwloop(event):
         return await event.edit("✘ Link tidak valid!")
 
     chat_part, msg_id = m.group(2), int(m.group(3))
-    chat_id = int("-100"+chat_part) if m.group(1)=="c/" else \
+    chat_id = int("-100" + chat_part) if m.group(1) == "c/" else \
               (int(chat_part) if chat_part.isdigit() else chat_part)
+
     msg = await event.client.get_messages(chat_id, ids=msg_id)
     await event.edit(f"⎋ forward `{nama}` sedang dimulai!")
 
     async def forward_loop():
+        loop_ke = 0  # ➜ counter
+
         try:
             while True:
+                loop_ke += 1  # ➜ increment
+
                 grups = spam_sql.get_groups(nama)
                 berhasil, gagal = [], []
+
                 for g in grups:
                     try:
                         await event.client.forward_messages(g, msg)
@@ -134,12 +152,16 @@ async def onfwloop(event):
                     except Exception as e:
                         gagal.append((g, str(e)))
 
-                log = f"⎈ **FORWARD `{nama}`**\n\n"
+                log = f"⎈ **FORWARD `{nama}`**\n"
+                log += f"🌀 **Loop ke:** `{loop_ke}`\n\n"
+
                 if berhasil:
                     log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + \
-                           "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
+                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
+                        f"• `{x}` karena `{e}`"
+                        for x, e in gagal
+                    )
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
@@ -147,6 +169,7 @@ async def onfwloop(event):
                     print(f"[FW LOG ERROR] {logerr}")
 
                 await asyncio.sleep(delay)
+
         except asyncio.CancelledError:
             print(f"[FW] Loop `{nama}` dihentikan.")
 
@@ -247,20 +270,52 @@ async def auto_resume_spam_startup():
     for l in lists:
         if not l.is_active:
             continue
+
         grups = spam_sql.get_groups(l.name)
         if not grups:
             continue
 
+        # ======================================================
+        # AUTO RESUME SPAM TEXT
+        # ======================================================
         if l.type == "spam":
+
             async def loop_resume_spam(nama, teks, delay, grups):
+                loop_ke = 0  # <–– COUNTER LOOP
+
                 while True:
+                    loop_ke += 1
                     berhasil, gagal = [], []
+
                     for g in grups:
                         try:
                             await bot.send_message(g, teks, parse_mode="html")
                             berhasil.append(g)
                         except Exception as e:
                             gagal.append((g, str(e)))
+
+                    # === LOG KE BOTLOG_CHATID ===
+                    log = (
+                        f"⎈ SPAM `{nama}`\n\n"
+                        f"✓ **Berhasil Loop ke :** `{loop_ke}`\n"
+                    )
+
+                    if berhasil:
+                        log += "\n".join(f"• `{x}`" for x in berhasil)
+                    else:
+                        log += "• tidak ada"
+
+                    log += "\n\n✘ **Gagal:**\n"
+                    if gagal:
+                        log += "\n".join(f"• `{x}` karena `{err}`" for x, err in gagal)
+                    else:
+                        log += "• tidak ada"
+
+                    try:
+                        await bot.send_message(BOTLOG_CHATID, log, parse_mode="md")
+                    except Exception as logerr:
+                        print(f"[AUTO RESUME SPAM LOG ERROR] {logerr}")
+
                     await asyncio.sleep(delay)
 
             active_spams[l.name] = asyncio.create_task(
@@ -268,36 +323,74 @@ async def auto_resume_spam_startup():
             )
             resumed.append(l.name)
 
+        # ======================================================
+        # AUTO RESUME FORWARD
+        # ======================================================
         elif l.type == "forward":
             try:
                 m = re.match(r"https://t.me/(c/)?(-?\d+|\w+)/(\d+)", l.content)
                 if not m:
                     continue
+
                 chat_part, msg_id = m.group(2), int(m.group(3))
-                chat_id = int("-100"+chat_part) if m.group(1)=="c/" else \
+                chat_id = int("-100" + chat_part) if m.group(1) == "c/" else \
                           (int(chat_part) if chat_part.isdigit() else chat_part)
+
                 msg = await bot.get_messages(chat_id, ids=msg_id)
 
                 async def loop_resume_forward(nama, msg, delay, grups):
+                    loop_ke = 0  # <–– COUNTER LOOP
+
                     while True:
+                        loop_ke += 1
                         berhasil, gagal = [], []
+
                         for g in grups:
                             try:
                                 await bot.forward_messages(g, msg)
                                 berhasil.append(g)
                             except Exception as e:
                                 gagal.append((g, str(e)))
+
+                        # === LOG KE BOTLOG_CHATID ===
+                        log = (
+                            f"⎈ FORWARD `{nama}`\n\n"
+                            f"✓ **Berhasil Loop ke :** `{loop_ke}`\n"
+                        )
+
+                        if berhasil:
+                            log += "\n".join(f"• `{x}`" for x in berhasil)
+                        else:
+                            log += "• tidak ada"
+
+                        log += "\n\n✘ **Gagal:**\n"
+                        if gagal:
+                            log += "\n".join(f"• `{x}` karena `{err}`" for x, err in gagal)
+                        else:
+                            log += "• tidak ada"
+
+                        try:
+                            await bot.send_message(BOTLOG_CHATID, log, parse_mode="md")
+                        except Exception as logerr:
+                            print(f"[AUTO RESUME FW LOG ERROR] {logerr}")
+
                         await asyncio.sleep(delay)
 
                 active_spams[l.name] = asyncio.create_task(
                     loop_resume_forward(l.name, msg, l.delay, grups)
                 )
                 resumed.append(l.name)
+
             except Exception as e:
                 print(f"[AutoResume FW Error] {e}")
 
+    # ======================================================
+    # NOTIF AUTO RESUME
+    # ======================================================
     if resumed:
-        text = "♻️ **Spam Loop sudah aktif kembali!:**\n" + "\n".join(f"• `{x}`" for x in resumed)
+        text = "♻️ **Spam Loop sudah aktif kembali!:**\n" + "\n".join(
+            f"• `{x}`" for x in resumed
+        )
         try:
             await bot.send_message(BOTLOG_CHATID, text)
         except Exception:
