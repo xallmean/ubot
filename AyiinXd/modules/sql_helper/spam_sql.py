@@ -11,6 +11,7 @@ class SpamList(BASE):
     content = Column(String)
     delay = Column(Integer)
     is_active = Column(Boolean, default=False)
+    loop_count = Column(BigInteger, default=0)
 
 class SpamGroup(BASE):
     __tablename__ = "spam_group"
@@ -19,6 +20,22 @@ class SpamGroup(BASE):
     group_username = Column(String)
 
 BASE.metadata.create_all(bind=SESSION.get_bind())
+
+def get_loop(name):
+    data = SESSION.query(SpamList).get(name)
+    return data.loop_count if data else 0
+
+def set_loop(name, value):
+    data = SESSION.query(SpamList).get(name)
+    if data:
+        data.loop_count = value
+        SESSION.commit()
+
+def increment_loop(name):
+    data = SESSION.query(SpamList).get(name)
+    if data:
+        data.loop_count += 1
+        SESSION.commit()
 
 def add_list(name, type, content, delay):
     data = SESSION.query(SpamList).filter_by(name=name).first()
