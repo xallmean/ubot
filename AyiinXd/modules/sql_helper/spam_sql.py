@@ -93,9 +93,11 @@ def alter_table_if_needed():
             conn.execute(text("ALTER TABLE spam_list ADD COLUMN delay INTEGER"))
         if "content" not in columns:
             conn.execute(text("ALTER TABLE spam_list ADD COLUMN content TEXT"))
-        if "is_active" not in columns:  # ⬅️ tambahkan ini
+        if "is_active" not in columns:
             conn.execute(text("ALTER TABLE spam_list ADD COLUMN is_active BOOLEAN DEFAULT FALSE"))
-
+        if "loop_count" not in columns:
+            conn.execute(text("ALTER TABLE spam_list ADD COLUMN loop_count BIGINT DEFAULT 0"))
+            
 BASE.metadata.create_all(bind=SESSION.get_bind())
 alter_table_if_needed()
 BASE.metadata.create_all(bind=SESSION.get_bind())
