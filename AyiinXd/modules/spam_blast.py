@@ -64,11 +64,12 @@ async def onspamloop(event):
     await event.edit(f"⎋ spam basic `{nama}` sedang dimulai!")
 
     async def spam_loop():
-        loop_ke = 0    # ➜ counter dimulai di sini
+        loop_ke = spam_sql.get_loop(nama)
 
         try:
             while True:
-                loop_ke += 1  # ➜ tiap putaran naik 1
+                loop_ke += 1
+                spam_sql.set_loop(nama, loop_ke)
 
                 grups = spam_sql.get_groups(nama)
                 berhasil, gagal = [], []
@@ -136,11 +137,12 @@ async def onfwloop(event):
     await event.edit(f"⎋ forward `{nama}` sedang dimulai!")
 
     async def forward_loop():
-        loop_ke = 0  # ➜ counter
+        loop_ke = spam_sql.get_loop(nama)
 
         try:
             while True:
-                loop_ke += 1  # ➜ increment
+                loop_ke += 1
+                spam_sql.set_loop(nama, loop_ke)
 
                 grups = spam_sql.get_groups(nama)
                 berhasil, gagal = [], []
@@ -281,10 +283,11 @@ async def auto_resume_spam_startup():
         if l.type == "spam":
 
             async def loop_resume_spam(nama, teks, delay, grups):
-                loop_ke = 0  # <–– COUNTER LOOP
+                loop_ke = spam_sql.get_loop(nama)
 
                 while True:
                     loop_ke += 1
+                    spam_sql.set_loop(nama, loop_ke)
                     berhasil, gagal = [], []
 
                     for g in grups:
@@ -296,8 +299,8 @@ async def auto_resume_spam_startup():
 
                     # === LOG KE BOTLOG_CHATID ===
                     log = (
-                        f"⎈ SPAM `{nama}`\n\n"
-                        f"✓ **Berhasil Loop ke :** `{loop_ke}`\n"
+                        f"⎈ BASIC `{nama}`\n\n"
+                        f"✓ **Berhasil Putaran ke :** `{loop_ke}`\n"
                     )
 
                     if berhasil:
@@ -339,10 +342,11 @@ async def auto_resume_spam_startup():
                 msg = await bot.get_messages(chat_id, ids=msg_id)
 
                 async def loop_resume_forward(nama, msg, delay, grups):
-                    loop_ke = 0  # <–– COUNTER LOOP
+                    loop_ke = spam_sql.get_loop(nama)
 
                     while True:
                         loop_ke += 1
+                        spam_sql.set_loop(nama, loop_ke)
                         berhasil, gagal = [], []
 
                         for g in grups:
@@ -355,7 +359,7 @@ async def auto_resume_spam_startup():
                         # === LOG KE BOTLOG_CHATID ===
                         log = (
                             f"⎈ FORWARD `{nama}`\n\n"
-                            f"✓ **Berhasil Loop ke :** `{loop_ke}`\n"
+                            f"✓ **Berhasil Putaran ke :** `{loop_ke}`\n"
                         )
 
                         if berhasil:
