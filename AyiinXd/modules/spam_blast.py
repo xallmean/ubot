@@ -61,6 +61,7 @@ async def onspamloop(event):
 
     reply = await event.get_reply_message()
     media = reply.media if reply and reply.media else None
+
     await event.edit(f"⎋ spam basic `{nama}` sedang dimulai!")
 
     async def spam_loop():
@@ -77,25 +78,28 @@ async def onspamloop(event):
                 for g in grups:
                     try:
                         if media:
+                            # TANPA parse_mode
                             await event.client.send_file(
-                                g, media, caption=teks or "", parse_mode="html"
+                                g, media, caption=teks or ""
                             )
                         else:
-                            await event.client.send_message(g, teks, parse_mode="html")
+                            await event.client.send_message(g, teks)
                         berhasil.append(g)
+
                     except Exception as e:
                         gagal.append((g, str(e)))
 
-                # === LOG + LOOP KE ===
-                log = f"⎈ **BASIC `{nama}`**\n"
-                log += f"🌀 **Loop ke:** `{loop_ke}`\n\n"
+                # LOG RAW TEXT (tanpa markdown)
+                log = (
+                    f"⎈ SPAM BASIC `{nama}`\n"
+                    f"🌀 Loop ke: {loop_ke}\n\n"
+                )
 
                 if berhasil:
-                    log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
+                    log += "✓ Berhasil:\n" + "\n".join(f"• {x}" for x in berhasil)
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
-                        f"• `{x}` karena `{e}`"
-                        for x, e in gagal
+                    log += "\n\n✘ Gagal:\n" + "\n".join(
+                        f"• {x} karena {e}" for x, e in gagal
                     )
 
                 try:
