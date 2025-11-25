@@ -1,4 +1,4 @@
-# repack by blue. #
+# repack by al. #
 
 import sys
 
@@ -18,8 +18,8 @@ from AyiinXd import (
 )
 from AyiinXd.modules.gcast import GCAST_BLACKLIST as GBL
 
-EOL = "EOL\n𝗜𝗫𝗔𝗟𝗟-Userbot {} Copyright © 2021-2025 IXALLUSERBOT• <https://github.com/ixally/Kazu-Userbot>"
-MSG_BLACKLIST = "𝗜𝗫𝗔𝗟𝗟-Userbot {}\nCopyright © 2021-2025 IXALLUSERBOT• <https://github.com/ixally/Kazu-Userbot>"
+EOL = "EOL\n𝗜𝗫𝗔𝗟𝗟-Userbot {} Copyright © 2021-2025 IXALLUSERBOT• <https://github.com/xallmean/ubot>"
+MSG_BLACKLIST = "𝗜𝗫𝗔𝗟𝗟-Userbot {}\nCopyright © 2021-2025 IXALLUSERBOT• <https://github.com/xallmean/ubot>"
 
 
 async def ayiin_client(client):
