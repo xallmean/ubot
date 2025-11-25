@@ -61,7 +61,7 @@ async def onspamloop(event):
 
     reply = await event.get_reply_message()
     media = reply.media if reply and reply.media else None
-    await event.edit(f"⎋ spam `{nama}` sedang dimulai!")
+    await event.edit(f"⎋ spam basic `{nama}` sedang dimulai!")
 
     async def spam_loop():
         loop_ke = 0    # ➜ counter dimulai di sini
@@ -86,7 +86,7 @@ async def onspamloop(event):
                         gagal.append((g, str(e)))
 
                 # === LOG + LOOP KE ===
-                log = f"⎈ **SPAM `{nama}`**\n"
+                log = f"⎈ **BASIC `{nama}`**\n"
                 log += f"🌀 **Loop ke:** `{loop_ke}`\n\n"
 
                 if berhasil:
