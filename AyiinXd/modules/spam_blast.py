@@ -60,7 +60,10 @@ async def onspamloop(event):
         return await event.edit(f"∅ spam `{nama}` sudah berjalan!")
 
     reply = await event.get_reply_message()
-    media = reply.media if reply and reply.media else None
+
+    downloaded_path = None
+    if reply and reply.media:
+        downloaded_path = await reply.download_media(file="./spam_media/")
 
     await event.edit(f"⎋ spam basic `{nama}` sedang dimulai!")
 
@@ -77,14 +80,10 @@ async def onspamloop(event):
 
                 for g in grups:
                     try:
-                        if media:
-                            # TANPA parse_mode
-                            await event.client.send_file(
-                                g, media, caption=teks or ""
-                            )
+                        if downloaded_path:
+                            await event.client.send_file(g, downloaded_path, caption=teks or "")
                         else:
                             await event.client.send_message(g, teks)
-                        berhasil.append(g)
 
                     except Exception as e:
                         gagal.append((g, str(e)))
@@ -268,6 +267,8 @@ async def show_all_spam_lists(event):
 
 import asyncio
 
+downloaded_path = None
+
 async def auto_resume_spam_startup():
     await asyncio.sleep(10)  # kasih delay biar koneksi siap
     lists = spam_sql.get_all_lists()
@@ -296,8 +297,10 @@ async def auto_resume_spam_startup():
 
                     for g in grups:
                         try:
-                            await bot.send_message(g, teks)
-                            berhasil.append(g)
+                            if downloaded_path:
+                                await bot.send_file(g, downloaded_path, caption=teks or "")
+                            else:
+                                await bot.send_message(g, teks)
                         except Exception as e:
                             gagal.append((g, str(e)))
 
