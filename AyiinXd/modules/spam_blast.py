@@ -61,9 +61,9 @@ async def onspamloop(event):
 
     reply = await event.get_reply_message()
 
-    downloaded_path = None
+    downloaded_bytes = None
     if reply and reply.media:
-        downloaded_path = await reply.download_media(file="./spam_media/")
+        downloaded_bytes = await reply.download_media(bytes)
 
     await event.edit(f"⎋ spam basic `{nama}` sedang dimulai!")
 
