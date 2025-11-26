@@ -81,7 +81,12 @@ async def onspamloop(event):
                 for g in grups:
                     try:
                         if downloaded_path:
-                            await event.client.send_file(g, downloaded_path, caption=teks or "")
+                            await event.client.send_file(
+                                g,
+                                downloaded_path,
+                                caption=teks or "",
+                                force_document=False
+                            )
                         else:
                             await event.client.send_message(g, teks)
 
@@ -298,7 +303,12 @@ async def auto_resume_spam_startup():
                     for g in grups:
                         try:
                             if downloaded_path:
-                                await bot.send_file(g, downloaded_path, caption=teks or "")
+                                await event.client.send_file(
+                                    g,
+                                    downloaded_path,
+                                    caption=teks or "",
+                                    force_document=False
+                                )
                             else:
                                 await bot.send_message(g, teks)
                         except Exception as e:
