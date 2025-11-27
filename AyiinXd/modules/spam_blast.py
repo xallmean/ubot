@@ -287,7 +287,6 @@ async def show_all_spam_lists(event):
 
 import asyncio
 
-downloaded_bytes = l.media
 
 async def auto_resume_spam_startup():
     await asyncio.sleep(10)  # kasih jeda koneksi
@@ -298,6 +297,7 @@ async def auto_resume_spam_startup():
             continue
 
         grups = spam_sql.get_groups(l.name)
+        downloaded_bytes = l.media
         if not grups:
             continue
 
