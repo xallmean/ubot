@@ -56,17 +56,20 @@ async def onspamloop(event):
     # ambil reply media -> SIMPAN PATH
     reply = await event.get_reply_message()
     media_path = None
+
     if reply and reply.media:
-        # simpan di folder sementara ./spam_media/
         save_dir = "./spam_media"
         os.makedirs(save_dir, exist_ok=True)
-        # download_media() tanpa arg -> kembalikan path
+
         media_path = await reply.download_media(file=save_dir)
-        # simpan path ke SQL
+
+    # ================ UPDATE LIST ================
+    spam_sql.update_list(nama, "spam", delay, teks)
+
+    # update media hanya kalau ada
+    if media_path:
         spam_sql.update_media(nama, media_path)
 
-    # update list metadata (tetap pakai signature lama)
-    spam_sql.update_list(nama, "basic", delay, teks)
     spam_sql.set_active(nama, True)
 
     if nama in active_spams:
@@ -74,6 +77,7 @@ async def onspamloop(event):
 
     await event.edit(f"⎋ spam basic `{nama}` sedang dimulai!")
 
+    # ================= LOOP ================
     async def spam_loop():
         loop_ke = spam_sql.get_loop(nama)
 
@@ -83,11 +87,13 @@ async def onspamloop(event):
                 spam_sql.set_loop(nama, loop_ke)
 
                 grups = spam_sql.get_groups(nama)
-                berhasil, gagal = [], []
+                berhasil, gagal = []
 
                 data = spam_sql.get_list(nama)
                 media_path_local = data.media if data else None
                 teks_local = data.content if data else teks
+
+                berhasil, gagal = [], []
 
                 for g in grups:
                     try:
@@ -99,11 +105,13 @@ async def onspamloop(event):
                             )
                         else:
                             await event.client.send_message(g, teks_local)
+
                         berhasil.append(g)
+
                     except Exception as e:
                         gagal.append((g, str(e)))
 
-                # LOG tanpa markdown/HTML (raw)
+                # ============== LOG ==============
                 log = (
                     f"⎈ SPAM BASIC `{nama}`\n"
                     f"🌀 Loop ke: {loop_ke}\n\n"
@@ -122,8 +130,8 @@ async def onspamloop(event):
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
-                except Exception as logerr:
-                    print(f"[SPAM LOG ERROR] {logerr}")
+                except:
+                    pass
 
                 await asyncio.sleep(delay)
 
@@ -299,6 +307,13 @@ async def auto_resume_spam_startup():
             continue
 
         media_path = l.media  # PATH string
+        # cek apakah media_path masih ada di storage (Heroku bisa hapus file)
+
+        if media_path and not os.path.exists(media_path):
+            print(f"[AUTO-RESUME] Media hilang: {media_path}")
+            spam_sql.update_media(nama, None)
+            media_path = None
+    
         if l.type == "basic":
             async def loop_resume_spam(nama, teks, delay, grups, media_path):
                 loop_ke = spam_sql.get_loop(nama)
