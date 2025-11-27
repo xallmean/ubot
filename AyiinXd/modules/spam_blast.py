@@ -60,7 +60,7 @@ async def onspamloop(event):
     # SIMPAN KE SQL
     spam_sql.update_list(
         nama,
-        tipe="spam",
+        type="basic",
         delay=delay,
         content=teks,
         media=media_bytes,
@@ -291,6 +291,7 @@ import asyncio
 async def auto_resume_spam_startup():
     await asyncio.sleep(10)  # kasih jeda koneksi
     lists = spam_sql.get_all_lists()
+    resumed = []
 
     for l in lists:
         if not l.is_active:
@@ -304,7 +305,7 @@ async def auto_resume_spam_startup():
         # ambil media dari SQL
         media_bytes = getattr(l, "media", None)
 
-        if l.type == "spam":
+        if l.type == "basic":
 
             async def loop_resume_spam(nama, teks, delay, grups, media_bytes):
                 loop_ke = spam_sql.get_loop(nama)
