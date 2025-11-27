@@ -3,7 +3,8 @@ try:
 except ImportError:
     raise AttributeError("Gagal import SQL Helper")
 
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, inspect, text
+from sqlalchemy import Column, String, Integer, BigInteger, Boolean, LargeBinary, inspect, text
+
 class SpamList(BASE):
     __tablename__ = "spam_list"
     name = Column(String, primary_key=True)
@@ -23,9 +24,12 @@ class SpamGroup(BASE):
 BASE.metadata.create_all(bind=SESSION.get_bind())
 
 def update_media(name, data):
-    entry = SESSION.query(SpamList).get(name)
+    entry = SESSION.query(SpamList).filter_by(name=name).first()
+    if not entry:
+        return False
     entry.media = data
     SESSION.commit()
+    return True
     
 def get_loop(name):
     data = SESSION.query(SpamList).get(name)
@@ -84,7 +88,17 @@ def update_list(name, type, delay, content):
         data.type = type
         data.delay = delay
         data.content = content
-        SESSION.commit()
+        data.is_active = True
+    else:
+        data = SpamList(
+            name=name,
+            type=type,
+            content=content,
+            delay=delay,
+            is_active=True
+        )
+        SESSION.add(data)
+    SESSION.commit()
 
 
 def alter_table_if_needed():
@@ -103,6 +117,8 @@ def alter_table_if_needed():
             conn.execute(text("ALTER TABLE spam_list ADD COLUMN is_active BOOLEAN DEFAULT FALSE"))
         if "loop_count" not in columns:
             conn.execute(text("ALTER TABLE spam_list ADD COLUMN loop_count BIGINT DEFAULT 0"))
+        if "media" not in columns:
+            conn.execute(text("ALTER TABLE spam_list ADD COLUMN media BYTEA"))
             
 BASE.metadata.create_all(bind=SESSION.get_bind())
 alter_table_if_needed()
