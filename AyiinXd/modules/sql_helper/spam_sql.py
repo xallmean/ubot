@@ -12,6 +12,7 @@ class SpamList(BASE):
     delay = Column(Integer)
     is_active = Column(Boolean, default=False)
     loop_count = Column(BigInteger, default=0)
+    media = Column(LargeBinary, nullable=True)
 
 class SpamGroup(BASE):
     __tablename__ = "spam_group"
@@ -21,6 +22,11 @@ class SpamGroup(BASE):
 
 BASE.metadata.create_all(bind=SESSION.get_bind())
 
+def update_media(name, data):
+    entry = SESSION.query(SpamList).get(name)
+    entry.media = data
+    SESSION.commit()
+    
 def get_loop(name):
     data = SESSION.query(SpamList).get(name)
     return data.loop_count if data else 0
