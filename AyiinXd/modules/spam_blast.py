@@ -80,10 +80,10 @@ async def onspamloop(event):
 
                 for g in grups:
                     try:
-                        if downloaded_path:
+                        if downloaded_bytes:
                             await event.client.send_file(
                                 g,
-                                downloaded_path,
+                                downloaded_bytes,
                                 caption=teks or "",
                                 force_document=False
                             )
@@ -272,7 +272,7 @@ async def show_all_spam_lists(event):
 
 import asyncio
 
-downloaded_path = None
+downloaded_bytes = None
 
 async def auto_resume_spam_startup():
     await asyncio.sleep(10)  # kasih delay biar koneksi siap
@@ -302,10 +302,10 @@ async def auto_resume_spam_startup():
 
                     for g in grups:
                         try:
-                            if downloaded_path:
+                            if downloaded_bytes:
                                 await event.client.send_file(
                                     g,
-                                    downloaded_path,
+                                    downloaded_bytes,
                                     caption=teks or "",
                                     force_document=False
                                 )
