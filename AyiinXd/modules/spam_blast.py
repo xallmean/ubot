@@ -1,3 +1,4 @@
+# modules/spam_blast.py
 from AyiinXd import CMD_HANDLER as cmd
 from AyiinXd import CMD_HELP
 from AyiinXd.ayiin import ayiin_cmd
@@ -14,6 +15,7 @@ from AyiinXd import bot
 from telethon import events
 import re
 import asyncio
+import os
 
 @ayiin_cmd(pattern=r"setgrup (\S+)\s+([\s\S]+)")
 async def setgrup(event):
@@ -38,11 +40,11 @@ async def setgrup(event):
     if not grups:
         return await event.edit("✘ Grup tidak ditemukan.")
 
-    # ⬇⬇⬇ Fix-nya di sini
-    spam_sql.add_list(nama, "biasa", "-", 0)  # Tambahkan data ke spam_list
-    spam_sql.add_groups_to_list(nama, grups)  # Tambahkan grup ke spam_group
+    spam_sql.add_list(nama, "basic", "-", 0)
+    spam_sql.add_groups_to_list(nama, grups)
 
     await event.edit(f"✓ Berhasil menambahkan `{len(grups)}` grup ke list `{nama}`.")
+
 active_spams = {}
 
 @ayiin_cmd(pattern=r"onspam (\d+)\s+(\S+)\s+([\s\S]+)")
@@ -51,28 +53,27 @@ async def onspamloop(event):
     nama  = event.pattern_match.group(2).strip()
     teks  = event.pattern_match.group(3).strip()
 
-    # =============== AMBIL MEDIA DARI REPLY (SEBAGAI BYTES) ===============
+    # ambil reply media -> SIMPAN PATH
     reply = await event.get_reply_message()
-    media_bytes = None
+    media_path = None
     if reply and reply.media:
-        media_bytes = await reply.download_media(bytes)
+        # simpan di folder sementara ./spam_media/
+        save_dir = "./spam_media"
+        os.makedirs(save_dir, exist_ok=True)
+        # download_media() tanpa arg -> kembalikan path
+        media_path = await reply.download_media(file=save_dir)
+        # simpan path ke SQL
+        spam_sql.update_media(nama, media_path)
 
-    # SIMPAN KE SQL
-    spam_sql.update_list(
-        nama,
-        type="basic",
-        delay=delay,
-        content=teks,
-        media=media_bytes,
-        active=True
-    )
+    # update list metadata (tetap pakai signature lama)
+    spam_sql.update_list(nama, "basic", delay, teks)
+    spam_sql.set_active(nama, True)
 
     if nama in active_spams:
         return await event.edit(f"∅ spam `{nama}` sudah berjalan!")
 
     await event.edit(f"⎋ spam basic `{nama}` sedang dimulai!")
 
-    # =============== LOOP SPAM ===============
     async def spam_loop():
         loop_ke = spam_sql.get_loop(nama)
 
@@ -84,27 +85,25 @@ async def onspamloop(event):
                 grups = spam_sql.get_groups(nama)
                 berhasil, gagal = [], []
 
+                data = spam_sql.get_list(nama)
+                media_path_local = data.media if data else None
+                teks_local = data.content if data else teks
+
                 for g in grups:
                     try:
-                        # === KIRIM MEDIA ===
-                        if media_bytes:
+                        if media_path_local:
                             await event.client.send_file(
                                 g,
-                                media_bytes,
-                                caption=teks or "",
-                                force_document=False
+                                media_path_local,
+                                caption=teks_local or ""
                             )
-
-                        # === KIRIM TEKS SAJA ===
                         else:
-                            await event.client.send_message(g, teks)
-
+                            await event.client.send_message(g, teks_local)
                         berhasil.append(g)
-
                     except Exception as e:
                         gagal.append((g, str(e)))
 
-                # =============== LOG KE BOTLOG ===============
+                # LOG tanpa markdown/HTML (raw)
                 log = (
                     f"⎈ SPAM BASIC `{nama}`\n"
                     f"🌀 Loop ke: {loop_ke}\n\n"
@@ -131,9 +130,8 @@ async def onspamloop(event):
         except asyncio.CancelledError:
             print(f"[SPAM] Loop `{nama}` dihentikan.")
 
-    # JALANKAN TASK
     active_spams[nama] = asyncio.create_task(spam_loop())
-    
+
 @ayiin_cmd(pattern=r"onfw (\d+)\s+(\S+)\s+(https?://t\.me/[^\s]+)")
 async def onfwloop(event):
     delay = int(event.pattern_match.group(1))
@@ -141,9 +139,7 @@ async def onfwloop(event):
     link  = event.pattern_match.group(3).strip()
 
     spam_sql.update_list(nama, "forward", delay, link)
-    data = spam_sql.get_list(nama)
-    data.is_active = True
-    SESSION.commit()
+    spam_sql.set_active(nama, True)
 
     if nama in active_spams:
         return await event.edit(f"∅ spam forward `{nama}` sudah berjalan!")
@@ -153,9 +149,8 @@ async def onfwloop(event):
         return await event.edit("✘ Link tidak valid!")
 
     chat_part, msg_id = m.group(2), int(m.group(3))
-    chat_id = int("-100" + chat_part) if m.group(1) == "c/" else \
+    chat_id = int("-100"+chat_part) if m.group(1)=="c/" else \
               (int(chat_part) if chat_part.isdigit() else chat_part)
-
     msg = await event.client.get_messages(chat_id, ids=msg_id)
     await event.edit(f"⎋ forward `{nama}` sedang dimulai!")
 
@@ -177,16 +172,21 @@ async def onfwloop(event):
                     except Exception as e:
                         gagal.append((g, str(e)))
 
-                log = f"⎈ **FORWARD `{nama}`**\n"
-                log += f"🌀 **Loop ke:** `{loop_ke}`\n\n"
+                log = (
+                    f"⎈ FORWARD `{nama}`\n"
+                    f"🌀 Loop ke: {loop_ke}\n\n"
+                )
 
                 if berhasil:
-                    log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
+                    log += "✓ Berhasil:\n" + "\n".join(f"• {x}" for x in berhasil)
+                else:
+                    log += "✓ Berhasil:\n• tidak ada"
+
+                log += "\n\n✘ Gagal:\n"
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
-                        f"• `{x}` karena `{e}`"
-                        for x, e in gagal
-                    )
+                    log += "\n".join(f"• {x} karena {err}" for x, err in gagal)
+                else:
+                    log += "• tidak ada"
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
@@ -200,22 +200,20 @@ async def onfwloop(event):
 
     active_spams[nama] = asyncio.create_task(forward_loop())
 
-
 @ayiin_cmd(pattern=r"stopspam (.+)")
 async def stopspam(event):
     nama = event.pattern_match.group(1).strip()
     task = active_spams.get(nama)
     data = spam_sql.get_list(nama)
     if data:
-        data.is_active = False              # ⬅️ matikan auto resume
-        SESSION.commit()
-        
-    if not task:
-        return await event.edit(f"✘ Spam `{nama}` tidak sedang berjalan.")
-    task.cancel()
-    active_spams.pop(nama)
-    await event.edit(f"∅ Spam `{nama}` berhasil dihentikan.")
-    
+        spam_sql.set_active(nama, False)
+    if task:
+        task.cancel()
+        active_spams.pop(nama)
+        await event.edit(f"∅ Spam `{nama}` berhasil dihentikan.")
+    else:
+        await event.edit(f"✘ Spam `{nama}` tidak sedang berjalan.")
+
 @ayiin_cmd(pattern="listspam$")
 async def list_all_spam(event):
     lists = spam_sql.get_all_lists()
@@ -282,14 +280,13 @@ async def show_all_spam_lists(event):
 
     if count == 0:
         teks = "✘ Belum ada list yang punya grup."
-        
     await event.edit(teks)
 
-import asyncio
-
-
+# -----------------------------
+# AUTO RESUME AT STARTUP
+# -----------------------------
 async def auto_resume_spam_startup():
-    await asyncio.sleep(10)  # kasih jeda koneksi
+    await asyncio.sleep(10)
     lists = spam_sql.get_all_lists()
     resumed = []
 
@@ -298,42 +295,28 @@ async def auto_resume_spam_startup():
             continue
 
         grups = spam_sql.get_groups(l.name)
-        downloaded_bytes = l.media
         if not grups:
             continue
 
-        # ambil media dari SQL
-        media_bytes = getattr(l, "media", None)
-
+        media_path = l.media  # PATH string
         if l.type == "basic":
-
-            async def loop_resume_spam(nama, teks, delay, grups, media_bytes):
+            async def loop_resume_spam(nama, teks, delay, grups, media_path):
                 loop_ke = spam_sql.get_loop(nama)
-
                 while True:
                     loop_ke += 1
                     spam_sql.set_loop(nama, loop_ke)
-
                     berhasil, gagal = [], []
 
                     for g in grups:
                         try:
-                            if media_bytes:
-                                await bot.send_file(
-                                    g,
-                                    media_bytes,
-                                    caption=teks or "",
-                                    force_document=False
-                                )
+                            if media_path:
+                                await bot.send_file(g, media_path, caption=teks or "")
                             else:
                                 await bot.send_message(g, teks)
-
                             berhasil.append(g)
-
                         except Exception as e:
                             gagal.append((g, str(e)))
 
-                    # LOG TANPA FORMAT MARKDOWN
                     log = (
                         f"⎈ BASIC {nama}\n\n"
                         f"✓ Berhasil Putaran ke : {loop_ke}\n"
@@ -346,7 +329,7 @@ async def auto_resume_spam_startup():
 
                     log += "\n\n✘ Gagal:\n"
                     if gagal:
-                        log += "\n".join(f"• {x} karena `{err}`" for x, err in gagal)
+                        log += "\n".join(f"• {x} karena {err}" for x, err in gagal)
                     else:
                         log += "• tidak ada"
 
@@ -358,32 +341,26 @@ async def auto_resume_spam_startup():
                     await asyncio.sleep(delay)
 
             active_spams[l.name] = asyncio.create_task(
-                loop_resume_spam(l.name, l.content, l.delay, grups, media_bytes)
-                    )
+                loop_resume_spam(l.name, l.content, l.delay, grups, media_path)
+            )
+            resumed.append(l.name)
 
-        # ======================================================
-        # AUTO RESUME FORWARD
-        # ======================================================
         elif l.type == "forward":
             try:
                 m = re.match(r"https://t.me/(c/)?(-?\d+|\w+)/(\d+)", l.content)
                 if not m:
                     continue
-
                 chat_part, msg_id = m.group(2), int(m.group(3))
                 chat_id = int("-100" + chat_part) if m.group(1) == "c/" else \
                           (int(chat_part) if chat_part.isdigit() else chat_part)
-
                 msg = await bot.get_messages(chat_id, ids=msg_id)
 
                 async def loop_resume_forward(nama, msg, delay, grups):
                     loop_ke = spam_sql.get_loop(nama)
-
                     while True:
                         loop_ke += 1
                         spam_sql.set_loop(nama, loop_ke)
                         berhasil, gagal = [], []
-
                         for g in grups:
                             try:
                                 await bot.forward_messages(g, msg)
@@ -391,25 +368,24 @@ async def auto_resume_spam_startup():
                             except Exception as e:
                                 gagal.append((g, str(e)))
 
-                        # === LOG KE BOTLOG_CHATID ===
                         log = (
                             f"⎈ FORWARD `{nama}`\n\n"
-                            f"✓ **Berhasil Putaran ke :** `{loop_ke}`\n"
+                            f"✓ Berhasil Putaran ke : {loop_ke}\n"
                         )
 
                         if berhasil:
-                            log += "\n".join(f"• `{x}`" for x in berhasil)
+                            log += "\n".join(f"• {x}" for x in berhasil)
                         else:
                             log += "• tidak ada"
 
-                        log += "\n\n✘ **Gagal:**\n"
+                        log += "\n\n✘ Gagal:\n"
                         if gagal:
-                            log += "\n".join(f"• `{x}` karena `{err}`" for x, err in gagal)
+                            log += "\n".join(f"• {x} karena {err}" for x, err in gagal)
                         else:
                             log += "• tidak ada"
 
                         try:
-                            await bot.send_message(BOTLOG_CHATID, log, parse_mode="md")
+                            await bot.send_message(BOTLOG_CHATID, log)
                         except Exception as logerr:
                             print(f"[AUTO RESUME FW LOG ERROR] {logerr}")
 
@@ -419,25 +395,20 @@ async def auto_resume_spam_startup():
                     loop_resume_forward(l.name, msg, l.delay, grups)
                 )
                 resumed.append(l.name)
-
             except Exception as e:
                 print(f"[AutoResume FW Error] {e}")
 
-    # ======================================================
-    # NOTIF AUTO RESUME
-    # ======================================================
+    # notif resume summary
     if resumed:
-        text = "♻️ **Spam Loop sudah aktif kembali!:**\n" + "\n".join(
-            f"• `{x}`" for x in resumed
-        )
+        text = "♻️ Spam Loop sudah aktif kembali:\n" + "\n".join(f"• {x}" for x in resumed)
         try:
             await bot.send_message(BOTLOG_CHATID, text)
         except Exception:
             print(text)
 
-# Jalankan otomatis saat userbot start
+# jalankan auto resume
 asyncio.get_event_loop().create_task(auto_resume_spam_startup())
-        
+
 CMD_HELP.update(
     {
         "spamloop": f"**Plugin : **`spamloop`\
@@ -460,9 +431,9 @@ CMD_HELP.update(
         \n\n  »  **Perintah :** `{cmd}dellist <namalist>`\
         \n  »  **Kegunaan :** Menghapus seluruh list beserta grup & teksnya.\
         \n\n  •  **NOTE :**\
-        \n    - Jangan ada spasi di antara `|`\
         \n    - Delay dalam detik (angka)\
         \n    - Bisa spam media (reply dulu pesan yang ingin disebar)\
+        \n    - Media disimpan sebagai file path agar auto-resume bisa mengirim media kembali\
         \n    - Gunakan dengan bijak, spam berlebihan bisa dibanned telegram!"
     }
-    )
+                )
