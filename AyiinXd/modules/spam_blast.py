@@ -309,11 +309,7 @@ async def auto_resume_spam_startup():
         media_path = l.media  # PATH string
         # cek apakah media_path masih ada di storage (Heroku bisa hapus file)
 
-        if media_path and not os.path.exists(media_path):
-            print(f"[AUTO-RESUME] Media hilang: {media_path}")
-            spam_sql.update_media(nama, None)
-            media_path = None
-    
+
         if l.type == "basic":
             async def loop_resume_spam(nama, teks, delay, grups, media_path):
                 loop_ke = spam_sql.get_loop(nama)
@@ -321,6 +317,11 @@ async def auto_resume_spam_startup():
                     loop_ke += 1
                     spam_sql.set_loop(nama, loop_ke)
                     berhasil, gagal = [], []
+
+                    if media_path and not os.path.exists(media_path):
+                        print(f"[AUTO-RESUME] Media hilang: {media_path}")
+                        spam_sql.update_media(nama, None)
+                        media_path = None
 
                     for g in grups:
                         try:
