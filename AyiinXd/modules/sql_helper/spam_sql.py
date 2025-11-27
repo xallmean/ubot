@@ -106,6 +106,12 @@ def update_list(name, type, delay, content):
         data.content = content
         SESSION.commit()
 
+def set_active(name, status: bool):
+    data = SESSION.query(SpamList).get(name)
+    if data:
+        data.is_active = status
+        SESSION.commit()
+
 # --------------------------
 # Auto-alter table jika kolom belum ada (migrasi ringan)
 # --------------------------
