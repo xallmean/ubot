@@ -287,7 +287,7 @@ async def show_all_spam_lists(event):
 
 import asyncio
 
-downloaded_bytes = db.media
+downloaded_bytes = l.media
 
 async def auto_resume_spam_startup():
     await asyncio.sleep(10)  # kasih jeda koneksi
