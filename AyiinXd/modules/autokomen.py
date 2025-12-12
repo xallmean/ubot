@@ -295,7 +295,7 @@ async def send_autokomen(event_or_msg, komen):
 # ─────────────────────────────────────────────────────────────
 # LISTENER MODE (STEALTH: ONLY THIS)
 # ─────────────────────────────────────────────────────────────
-@bot.on(events.NewMessage(incoming=True))
+@bot.on(events.NewMessage)
 async def komen_listener(event):
     global polling_active
 
