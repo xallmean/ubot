@@ -1,210 +1,379 @@
 import asyncio
+import time
+from datetime import datetime
 from telethon import events
+from telethon.errors import FloodWaitError
 from telethon.tl.types import Message
 from telethon.tl.functions.messages import GetDiscussionMessageRequest
+
 from AyiinXd import bot
 from AyiinXd import CMD_HANDLER as cmd
 from AyiinXd import CMD_HELP
 from AyiinXd import BOTLOG_CHATID
 from AyiinXd.ayiin import ayiin_cmd
-from datetime import datetime
 from .sql_helper import autokomen_sql as db
 
-# ===== Interval polling (detik) =====
-POLL_INTERVAL = 20
+# ─────────────────────────────────────────────────────────────
+# STEALTH SETTINGS (FAST, NO MANUAL DELAY)
+# ─────────────────────────────────────────────────────────────
+# Cooldown per *destination discussion chat* (SKIP, no sleep)
+COOLDOWN_SECONDS = 25
 
-# ===== INIT STATE =====
-stopped_channels = set()
-polling_active = True
+# Max memory for responded cache (prevents RAM growth)
+RESPONDED_MAX = 8000
+
+# TTL for responded keys (seconds)
+RESPONDED_TTL = 6 * 60 * 60  # 6 hours
+
+# Logging verbosity
+STEALTH_SILENT = True  # True = minimize "me" spam errors
 
 
-# ===== Sinkronisasi Status =====
-async def sync_autokomen_state():
-    """Sinkronisasi channel aktif/nonaktif dari database"""
-    global stopped_channels, polling_active
+# ─────────────────────────────────────────────────────────────
+# RUNTIME STATE
+# ─────────────────────────────────────────────────────────────
+stopped_channels = set()         # channel usernames "@xxx" which are inactive
+polling_active = True            # we keep this flag for compatibility with commands
+
+TRIGGER_CACHE = {}               # { "@channel": [komen_rows...] }
+BLOCKWORDS_CACHE = []            # [ "word1", "word 2", ... ]
+CACHE_READY = False
+
+# message dedupe: {(src_chat_id, src_msg_id, trigger): timestamp}
+RESPONDED = {}
+
+# cooldown per destination chat id: {dest_chat_id: last_ts}
+LAST_REPLY_TS = {}
+
+STATE_LOCK = asyncio.Lock()
+
+
+# ─────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────
+def _now() -> float:
+    return time.time()
+
+
+def _normalize_text(t: str) -> str:
+    return (t or "").lower().strip()
+
+
+def _cleanup_responded():
+    """Bound memory & TTL cleanup. O(1) most of the time."""
+    if len(RESPONDED) <= RESPONDED_MAX:
+        # still do light TTL cleanup rarely
+        return
+
+    cutoff = _now() - RESPONDED_TTL
+    # remove old entries first
+    old_keys = [k for k, ts in RESPONDED.items() if ts < cutoff]
+    for k in old_keys:
+        RESPONDED.pop(k, None)
+
+    # if still too big, drop oldest by timestamp
+    if len(RESPONDED) > RESPONDED_MAX:
+        # sort only when needed (rare)
+        items = sorted(RESPONDED.items(), key=lambda x: x[1])
+        for k, _ts in items[: max(0, len(RESPONDED) - RESPONDED_MAX)]:
+            RESPONDED.pop(k, None)
+
+
+async def _safe_send_me(text: str):
+    if STEALTH_SILENT:
+        return
     try:
-        all_data = db.get_all_komen()
+        await bot.send_message("me", text)
+    except Exception:
+        pass
+
+
+async def refresh_cache(full: bool = True):
+    """
+    Refresh cache from DB.
+    - full=True: reload triggers for all channels + blockwords + active/inactive status
+    - full=False: reload only blockwords (or light refresh)
+    """
+    global BLOCKWORDS_CACHE, TRIGGER_CACHE, CACHE_READY, polling_active
+
+    async with STATE_LOCK:
+        # blockwords
+        try:
+            BLOCKWORDS_CACHE = [b.strip().lower() for b in (db.get_blockwords() or []) if str(b).strip()]
+        except Exception:
+            BLOCKWORDS_CACHE = []
+
+        if not full:
+            CACHE_READY = True
+            return
+
+        # stopped channels + active flag
+        stopped_channels.clear()
         active_count = 0
         inactive_count = 0
-        stopped_channels.clear()
+
+        try:
+            all_data = db.get_all_komen()
+        except Exception as e:
+            await _safe_send_me(f"⚠️ DB error get_all_komen: {e}")
+            all_data = []
+
+        # rebuild trigger cache per channel
+        TRIGGER_CACHE.clear()
 
         for row in all_data:
-            if not row.active:
-                stopped_channels.add(row.channel_id)
+            ch = row.channel_id
+            if not ch:
+                continue
+            # normalize channel format
+            if not str(ch).startswith("@"):
+                ch = "@" + str(ch)
+
+            # active / inactive
+            if hasattr(row, "active") and (row.active is False):
+                stopped_channels.add(ch)
                 inactive_count += 1
             else:
                 active_count += 1
 
+            TRIGGER_CACHE.setdefault(ch, []).append(row)
+
         polling_active = active_count > 0
+        CACHE_READY = True
+
+        # minimal startup note (optional)
+        if not STEALTH_SILENT:
+            await bot.send_message(
+                "me",
+                f"✅ **AutoKomen Sync**\n"
+                f"📊 Aktif: `{active_count}` | Nonaktif: `{inactive_count}`\n"
+                f"🧱 Blockwords: `{len(BLOCKWORDS_CACHE)}`",
+            )
+
+
+def _contains_blockword(text: str) -> bool:
+    if not BLOCKWORDS_CACHE:
+        return False
+    for bw in BLOCKWORDS_CACHE:
+        if bw and bw in text:
+            return True
+    return False
+
+
+def _cooldown_hit(dest_chat_id: int) -> bool:
+    """Return True if should SKIP (no delay)."""
+    last = LAST_REPLY_TS.get(dest_chat_id, 0.0)
+    now = _now()
+    if now - last < COOLDOWN_SECONDS:
+        return True
+    return False
+
+
+def _mark_cooldown(dest_chat_id: int):
+    LAST_REPLY_TS[dest_chat_id] = _now()
+
+
+def _responded_key(src_chat_id: int, src_msg_id: int, trigger: str):
+    return (int(src_chat_id), int(src_msg_id), str(trigger or "").lower())
+
+
+def _already_responded(key) -> bool:
+    ts = RESPONDED.get(key)
+    if not ts:
+        return False
+    # TTL check
+    if _now() - ts > RESPONDED_TTL:
+        RESPONDED.pop(key, None)
+        return False
+    return True
+
+
+def _mark_responded(key):
+    RESPONDED[key] = _now()
+    _cleanup_responded()
+
+
+async def _log_botlog(channel_username: str, msg_id: int, trigger: str, reply_preview: str):
+    if BOTLOG_CHATID == 0:
+        return
+    try:
+        username_clean = channel_username.replace("@", "")
+        waktu = datetime.now().strftime("%H:%M:%S")
         await bot.send_message(
-            "me",
-            f"✅ **AutoKomen Sinkronisasi Berhasil**\n"
-            f"📊 Aktif: `{active_count}` | Nonaktif: `{inactive_count}`",
+            BOTLOG_CHATID,
+            f"📢 **Auto-Komen Notification!**\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🕒 **Waktu:** `{waktu}`\n"
+            f"🏷️ **Channel:** `{channel_username}`\n"
+            f"💬 **Trigger:** `{trigger}`\n"
+            f"📨 **Reply:** `{(reply_preview or '-')[:100]}`\n"
+            f"🔗 [Lihat Pesan](https://t.me/{username_clean}/{msg_id})",
+            link_preview=False,
         )
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────
+# CORE: SEND AUTOKOMEN (DISCUSSION REPLY)
+# ─────────────────────────────────────────────────────────────
+async def send_autokomen(event_or_msg, komen):
+    """
+    Send a reply into the discussion thread (if available).
+    No manual delay. FloodWait respected.
+    """
+    try:
+        src_chat_id = getattr(event_or_msg, "chat_id", None)
+        src_msg_id = getattr(event_or_msg, "id", None)
+        if not src_chat_id or not src_msg_id:
+            return False
+
+        # Find linked discussion message
+        discussion = await bot(
+            GetDiscussionMessageRequest(
+                peer=src_chat_id,
+                msg_id=src_msg_id
+            )
+        )
+        if not discussion or not getattr(discussion, "messages", None):
+            return False
+
+        reply_msg = discussion.messages[0]
+
+        # destination chat id
+        to_id = getattr(reply_msg, "to_id", None)
+        dest_chat_id = getattr(to_id, "channel_id", None)
+        if not dest_chat_id:
+            return False
+
+        # cooldown skip (fast, no sleep)
+        if _cooldown_hit(int(dest_chat_id)):
+            return False
+
+        # Choose message content
+        out_text = None
+        if getattr(komen, "msg_id", None) and getattr(komen, "msg_chat", None):
+            try:
+                src = await bot.get_messages(int(komen.msg_chat), ids=int(komen.msg_id))
+                out_text = (src.text or "💬 (Kosong / bukan teks)")
+            except Exception as e:
+                await _safe_send_me(f"[ERROR Auto-Komen Msg] {e}")
+                return False
+        else:
+            out_text = getattr(komen, "reply", None)
+
+        if not out_text:
+            return False
+
+        # Send (FloodWait handled)
+        try:
+            await bot.send_message(
+                entity=int(dest_chat_id),
+                message=out_text,
+                reply_to=reply_msg.id
+            )
+        except FloodWaitError as e:
+            # Telegram dictates the wait time (not "manual delay")
+            await asyncio.sleep(e.seconds)
+            await bot.send_message(
+                entity=int(dest_chat_id),
+                message=out_text,
+                reply_to=reply_msg.id
+            )
+
+        _mark_cooldown(int(dest_chat_id))
+        return True
+
+    except FloodWaitError as e:
+        await asyncio.sleep(e.seconds)
+        return False
     except Exception as e:
-        await bot.send_message("me", f"⚠️ Gagal sync status autokomen: {e}")
+        await _safe_send_me(f"[ERROR Auto-Komen] {e}")
+        return False
 
 
-# ===== LISTENER MODE =====
+# ─────────────────────────────────────────────────────────────
+# LISTENER MODE (STEALTH: ONLY THIS)
+# ─────────────────────────────────────────────────────────────
 @bot.on(events.NewMessage(incoming=True))
 async def komen_listener(event):
+    global polling_active
+
     if not polling_active:
         return
     if not isinstance(event.message, Message):
         return
-    if not event.is_channel or event.chat.username is None:
+    if not event.is_channel:
+        return
+    if not getattr(event, "chat", None) or not getattr(event.chat, "username", None):
         return
 
+    # Ensure cache loaded
+    if not CACHE_READY:
+        await refresh_cache(full=True)
+
     channel_id = f"@{event.chat.username}"
+
+    # skip if stopped
     if channel_id in stopped_channels:
         return
 
-    triggers = db.get_triggers(channel_id)
+    text = _normalize_text(event.raw_text)
+
+    # global blockword
+    if _contains_blockword(text):
+        return
+
+    # triggers from cache (fast) or fallback DB
+    triggers = TRIGGER_CACHE.get(channel_id)
+    if triggers is None:
+        try:
+            triggers = db.get_triggers(channel_id) or []
+            TRIGGER_CACHE[channel_id] = triggers
+        except Exception:
+            return
+
     if not triggers:
         return
 
-    # ambil teks pesan dan normalize
-    text = (event.raw_text or "").lower().strip()
-
-    # ===== CEK BLOCKWORD (GLOBAL) =====
-    blockwords = [b.strip().lower() for b in (db.get_blockwords() or [])]
-    if blockwords:
-        print(f"[AutoKomen] Blockwords global: {blockwords}")
-        print(f"[AutoKomen] Text: {text}")
-        for bw in blockwords:
-            if bw and bw in text:
-                print(f"[AutoKomen] ❌ Skip {channel_id} karena mengandung blockword: {bw}")
-                return
-    # ===================================
-    # ==========================
-
-    # kalau gak ada blockword, baru cek trigger
+    # trigger match
     for komen in triggers:
-        if komen.trigger and komen.trigger.lower() in text:
-            await send_autokomen(event, komen)
+        trig = getattr(komen, "trigger", None)
+        if not trig:
+            continue
+        trig_norm = str(trig).lower()
 
+        # skip if already handled this message for this trigger
+        key = _responded_key(event.chat_id, event.id, trig_norm)
+        if _already_responded(key):
+            continue
 
-# ===== POLLING MODE =====
-async def polling_worker():
-    global polling_active
-    while True:
-        try:
-            if not polling_active:
-                await asyncio.sleep(POLL_INTERVAL)
-                continue
+        # match
+        if trig_norm in text:
+            ok = await send_autokomen(event, komen)
+            if ok:
+                _mark_responded(key)
 
-            # ambil semua channel dari DB
-            all_channels = db.get_all_channels()
-
-            # ambil blockword global dari DB (multi kata support)
-            blockwords = [b.strip().lower() for b in (db.get_blockwords() or [])]
-
-            for ch in all_channels:
-                channel_username = ch[0]
-                if channel_username in stopped_channels:
-                    continue
-
+                # update DB last_msg_id (fix from old version)
                 try:
-                    msgs = await bot.get_messages(channel_username, limit=1)
-                    if not msgs:
-                        continue
+                    db.update_last_msg(channel_id, trig_norm, event.id)
+                except Exception:
+                    pass
 
-                    msg = msgs[0]
-                    text = (msg.text or "").lower()
+                # botlog
+                reply_preview = getattr(komen, "reply", None) or ""
+                await _log_botlog(channel_id, event.id, trig_norm, reply_preview)
 
-                    # ====== CEK BLOCKWORD GLOBAL ======
-                    if blockwords:
-                        for bw in blockwords:
-                            if bw and bw in text:
-                                print(f"[Polling] ❌ Skip {channel_username} (mengandung blockword: {bw})")
-                                raise StopIteration  # langsung loncat channel berikut
-                    # ==================================
-
-                    triggers = db.get_triggers(channel_username)
-                    if not triggers:
-                        continue
-
-                    for komen in triggers:
-                        if komen.last_msg_id == msg.id:
-                            continue
-
-                        if komen.trigger.lower() in text:
-                            await send_autokomen(msg, komen)
-                            db.update_last_msg(channel_username, komen.trigger, msg.id)
-
-                            # === Kirim notifikasi log ke BOTLOG_CHATID ===
-                            if BOTLOG_CHATID != 0:
-                                try:
-                                    username_clean = channel_username.replace("@", "")
-                                    waktu = datetime.now().strftime("%H:%M:%S")
-                                    reply_preview = (komen.reply or "-")[:100]
-                                    await bot.send_message(
-                                        BOTLOG_CHATID,
-                                        f"📢 **Auto-Komen Notification!**\n"
-                                        f"━━━━━━━━━━━━━━━\n"
-                                        f"🕒 **Waktu:** `{waktu}`\n"
-                                        f"🏷️ **Channel:** `{channel_username}`\n"
-                                        f"💬 **Trigger:** `{komen.trigger}`\n"
-                                        f"📨 **Reply:** `{reply_preview}`\n"
-                                        f"🔗 [Lihat Pesan](https://t.me/{username_clean}/{msg.id})",
-                                        link_preview=False,
-                                    )
-                                except Exception as e:
-                                    print(f"[LOG ERROR] Gagal kirim log ke BOTLOG_CHATID: {e}")
-
-                            break  # selesai trigger cocok, lanjut channel berikut
-
-                except StopIteration:
-                    continue  # loncat ke channel berikut
-                except Exception as e:
-                    await bot.send_message("me", f"[Polling Error] {channel_username}: {e}")
-
-        except Exception as e:
-            await bot.send_message("me", f"[Polling Fatal] {e}")
-
-        await asyncio.sleep(POLL_INTERVAL)
+            # only one trigger response per message
+            break
 
 
-# ===== SEND AUTOKOMEN =====
-async def send_autokomen(event_or_msg, komen):
-    try:
-        discussion = await bot(
-            GetDiscussionMessageRequest(
-                peer=event_or_msg.chat_id,
-                msg_id=event_or_msg.id
-            )
-        )
-        if not discussion.messages:
-            return
-
-        reply_msg = discussion.messages[0]
-        reply_chat_id = reply_msg.to_id.channel_id
-
-        if komen.msg_id and komen.msg_chat:
-            try:
-                msg = await bot.get_messages(int(komen.msg_chat), ids=int(komen.msg_id))
-                await bot.send_message(
-                    entity=reply_chat_id,
-                    message=msg.text or "💬 (Kosong / bukan teks)",
-                    reply_to=reply_msg.id
-                )
-            except Exception as e:
-                await bot.send_message("me", f"[ERROR Auto-Komen Msg]\n{e}")
-        elif komen.reply:
-            await bot.send_message(
-                entity=reply_chat_id,
-                message=komen.reply,
-                reply_to=reply_msg.id
-            )
-    except Exception as e:
-        await bot.send_message("me", f"[ERROR Auto-Komen]\n`{e}`")
-
-
-# ===== COMMANDS =====
-
+# ─────────────────────────────────────────────────────────────
+# COMMANDS
+# ─────────────────────────────────────────────────────────────
 @ayiin_cmd(pattern="stopkomen(?: |$)(.*)")
 async def _(event):
-    """Berhentiin auto komen"""
+    """Stop auto komen (all or per channel)"""
     global polling_active
     target = event.pattern_match.group(1).strip()
 
@@ -212,20 +381,27 @@ async def _(event):
         polling_active = False
         db.SESSION.query(db.AutoKomen).update({"active": False})
         db.SESSION.commit()
-        stopped_channels.clear()
+
+        async with STATE_LOCK:
+            stopped_channels.clear()
+            TRIGGER_CACHE.clear()
+
         return await event.edit("🛑 Auto-komen **dihentikan di semua channel.**")
 
     if not target.startswith("@"):
         target = "@" + target
 
     db.deactivate_channel(target)
-    stopped_channels.add(target)
+
+    async with STATE_LOCK:
+        stopped_channels.add(target)
+
     await event.edit(f"🛑 Auto-komen dihentikan di channel {target}.")
 
 
 @ayiin_cmd(pattern="startkomen(?: |$)(.*)")
 async def _(event):
-    """Lanjut auto komen lagi"""
+    """Start auto komen (all or per channel)"""
     global polling_active
     target = event.pattern_match.group(1).strip()
 
@@ -233,18 +409,24 @@ async def _(event):
         polling_active = True
         db.SESSION.query(db.AutoKomen).update({"active": True})
         db.SESSION.commit()
-        stopped_channels.clear()
+
+        async with STATE_LOCK:
+            stopped_channels.clear()
+
+        await refresh_cache(full=True)
         return await event.edit("✅ Auto-komen **dinyalakan kembali untuk semua channel.**")
 
     if not target.startswith("@"):
         target = "@" + target
 
     db.activate_channel(target)
-    if target in stopped_channels:
-        stopped_channels.remove(target)
-        return await event.edit(f"✅ Auto-komen diaktifkan kembali untuk {target}.")
-    else:
-        return await event.edit(f"ℹ️ Auto-komen di {target} sudah aktif.")
+
+    async with STATE_LOCK:
+        if target in stopped_channels:
+            stopped_channels.remove(target)
+
+    await refresh_cache(full=True)
+    return await event.edit(f"✅ Auto-komen diaktifkan kembali untuk {target}.")
 
 
 @ayiin_cmd(pattern="setch(?: |$)(.*)")
@@ -254,18 +436,21 @@ async def _(event):
         return await event.edit("Contoh: .setch <trigger> <@channel1 @channel2>")
 
     parts = args.split()
-    trigger = parts[0]
+    trigger = parts[0].strip()
     channels = parts[1:]
 
-    if not channels:
-        return await event.edit("Harap sebutkan minimal 1 @channel.")
+    if not trigger or not channels:
+        return await event.edit("Contoh: .setch <trigger> <@channel1 @channel2>")
 
+    norm_channels = []
     for ch in channels:
         if not ch.startswith("@"):
             ch = "@" + ch
         db.add_filter(ch, trigger)
+        norm_channels.append(ch)
 
-    await event.edit(f"✅ Trigger `{trigger}` disimpan di channel: `{', '.join(channels)}`")
+    await refresh_cache(full=True)
+    await event.edit(f"✅ Trigger `{trigger}` disimpan di channel: `{', '.join(norm_channels)}`")
 
 
 @ayiin_cmd(pattern="setkomen(?: |$)(.*)")
@@ -282,7 +467,13 @@ async def _(event):
         return await event.edit("❌ Gagal ambil pesan yang direply.")
 
     all_data = db.get_all_komen()
-    channels = [d.channel_id for d in all_data if d.trigger == trigger]
+    channels = []
+    for d in all_data:
+        if d.trigger == trigger:
+            ch = d.channel_id
+            if not str(ch).startswith("@"):
+                ch = "@" + str(ch)
+            channels.append(ch)
 
     if not channels:
         return await event.edit("❌ Belum ada channel untuk trigger ini. Gunakan `.setch` dulu.")
@@ -295,6 +486,7 @@ async def _(event):
     except Exception:
         link_preview = "pesan"
 
+    await refresh_cache(full=True)
     await event.edit(
         f"✅ Disimpan di `{len(channels)}` channel:\n🔑 Trigger: `{trigger}`\n💬 Komen: [link]({link_preview})",
         link_preview=False
@@ -307,19 +499,22 @@ async def _(event):
     if len(args) < 2:
         return await event.edit("Contoh: .delkomen <trigger> <@channel1> <@channel2> ...")
 
-    trig = args[0]
+    trig = args[0].strip()
     channels = args[1:]
     deleted, not_found = [], []
+
+    all_channels = [c[0] for c in db.get_all_channels()]
 
     for ch in channels:
         if not ch.startswith("@"):
             ch = "@" + ch
-        all_channels = [c[0] for c in db.get_all_channels()]
         if ch in all_channels:
             db.delete_trigger(ch, trig)
             deleted.append(ch)
         else:
             not_found.append(ch)
+
+    await refresh_cache(full=True)
 
     msg = ""
     if deleted:
@@ -339,15 +534,18 @@ async def _(event):
     channels = text.split()
     deleted, not_found = [], []
 
+    all_channels = [c[0] for c in db.get_all_channels()]
+
     for ch in channels:
         if not ch.startswith("@"):
             ch = "@" + ch
-        all_channels = [c[0] for c in db.get_all_channels()]
         if ch in all_channels:
             db.delete_channel(ch)
             deleted.append(ch)
         else:
             not_found.append(ch)
+
+    await refresh_cache(full=True)
 
     msg = ""
     if deleted:
@@ -369,33 +567,27 @@ async def _(event):
         trigger = row.trigger
         channel = row.channel_id
         reply = row.reply or "(Belum ada pesan)"
+        if not str(channel).startswith("@"):
+            channel = "@" + str(channel)
         grouped.setdefault(trigger, []).append((channel, reply))
 
     msg = "**📋 Daftar List Auto Komen :**\n\n"
     for trigger, items in grouped.items():
-        channels = set()
-        replies = set()
-        for ch, reply in items:
-            ch_clean = f"@{ch}" if not str(ch).startswith("@") else str(ch)
-            channels.add(ch_clean)
-            replies.add(reply.strip())
+        channels = sorted({ch for ch, _r in items})
+        replies = sorted({(r or "").strip() for _ch, r in items})
 
-        channels_str = " ".join(channels)
-        replies_str = "\n".join(
-            [f'Pesan : "{(r[:400] + "...") if len(r) > 400 else r}"' for r in replies]
-        )
-
-        msg += (
-            f"**Channel :** {channels_str}\n"
-            f"**Trigger :** \"{trigger}\"\n"
-            f"{replies_str}\n\n"
-        )
+        msg += f"**Channel :** {' '.join(channels)}\n"
+        msg += f"**Trigger :** \"{trigger}\"\n"
+        for r in replies:
+            rr = (r[:400] + "...") if len(r) > 400 else r
+            msg += f'Pesan : "{rr}"\n'
+        msg += "\n"
 
     await event.edit(msg)
 
+
 @ayiin_cmd(pattern="statuskomen$")
 async def _(event):
-    """Lihat status aktif/nonaktif auto-komen tiap channel"""
     data = db.get_all_komen()
     if not data:
         return await event.edit("❌ Belum ada data auto-komen.")
@@ -403,12 +595,15 @@ async def _(event):
     aktif, nonaktif = [], []
 
     for row in data:
+        ch = row.channel_id
+        if not str(ch).startswith("@"):
+            ch = "@" + str(ch)
         if getattr(row, "active", True):
-            if row.channel_id not in aktif:
-                aktif.append(row.channel_id)
+            if ch not in aktif:
+                aktif.append(ch)
         else:
-            if row.channel_id not in nonaktif:
-                nonaktif.append(row.channel_id)
+            if ch not in nonaktif:
+                nonaktif.append(ch)
 
     msg = "**📊 Status AutoKomen**\n\n"
     if aktif:
@@ -421,8 +616,9 @@ async def _(event):
     await event.edit(msg)
 
 
-# ===== BLOCKWORD COMMANDS =====
-# ===== BLOCKWORD GLOBAL COMMAND =====
+# ─────────────────────────────────────────────────────────────
+# BLOCKWORD COMMANDS (GLOBAL)
+# ─────────────────────────────────────────────────────────────
 @ayiin_cmd(pattern="addblock(?: |$)(.*)")
 async def _(event):
     words = event.pattern_match.group(1)
@@ -430,6 +626,7 @@ async def _(event):
         return await event.edit("⚠️ Contoh: `.addblock sfs auto viu jaseb telegram`")
 
     count = db.add_blockwords_global(words)
+    await refresh_cache(full=False)
     await event.edit(f"✅ {count} kata ditambahkan ke daftar blockword global.")
 
 
@@ -440,6 +637,7 @@ async def _(event):
         return await event.edit("⚠️ Contoh: `.delblock sfs`")
 
     db.del_blockword_global(word)
+    await refresh_cache(full=False)
     await event.edit(f"🗑️ Blockword `{word}` dihapus dari semua channel.")
 
 
@@ -452,37 +650,41 @@ async def _(event):
     await event.edit(msg)
 
 
-# ===== STARTUP POLLING =====
-async def start_polling():
-    await asyncio.sleep(10)
-    await sync_autokomen_state()
-    bot.loop.create_task(polling_worker())
+# ─────────────────────────────────────────────────────────────
+# STARTUP (STEALTH: cache only, no polling)
+# ─────────────────────────────────────────────────────────────
+async def start_stealth():
+    await asyncio.sleep(5)
+    await refresh_cache(full=True)
 
-bot.loop.create_task(start_polling())
+bot.loop.create_task(start_stealth())
 
+
+# ─────────────────────────────────────────────────────────────
+# HELP
+# ─────────────────────────────────────────────────────────────
 CMD_HELP.update({
-    "autokomen": f"Plugin : autokomen\
-\n\n  »  Perintah : {cmd}setch <trigger> <@channel>\
-\n  »  Kegunaan : Set trigger untuk satu atau lebih channel.\
-\n\n  »  Perintah : {cmd}setkomen <trigger> (balas ke pesan)\
-\n  »  Kegunaan : Set isi komen (teks/media) untuk trigger tertentu.\
-\n\n  »  Perintah : {cmd}stopkomen\
-\n  »  Kegunaan : Stop auto komen ke semua channel.\
-\n  »  Kegunaan : Aktifkan auto komen di channel tertentu.\
-\n\n  »  Perintah : {cmd}startkomen\
-\n  »  Kegunaan : Aktifkan auto komen ke semua channel.\
-\n\n  »  Perintah : {cmd}delkomen <trigger> <@channel>\
-\n  »  Kegunaan : Menghapus trigger dari channel tertentu.\
-\n\n  »  Perintah : {cmd}delch <@channel>\
-\n  »  Kegunaan : Menghapus semua data trigger & komen channel.\
-\n\n  »  Perintah : {cmd}listkomen\
-\n  »  Kegunaan : Melihat daftar list auto komen.\
-\n\n  »  Perintah : {cmd}statuskomen\
-\n  »  Kegunaan : Melihat status aktif/nonaktif tiap channel.\
-\n\n  »  Perintah : {cmd}addblock <kata>\
-\n  »  Kegunaan : Tambahkan blockword agar pesan dengan kata itu di-skip.\
-\n\n  »  Perintah : {cmd}delblock <kata>\
-\n  »  Kegunaan : Hapus blockword dari channel.\
-\n\n  »  Perintah : {cmd}listblock\
-\n  »  Kegunaan : Lihat semua blockword pada channel."
+    "autokomen": f"Plugin : autokomen"
+    f"\n\n  »  Perintah : {cmd}setch <trigger> <@channel>"
+    f"\n  »  Kegunaan : Set trigger untuk satu atau lebih channel."
+    f"\n\n  »  Perintah : {cmd}setkomen <trigger> (balas ke pesan)"
+    f"\n  »  Kegunaan : Set isi komen (teks/media) untuk trigger tertentu."
+    f"\n\n  »  Perintah : {cmd}stopkomen"
+    f"\n  »  Kegunaan : Stop auto komen ke semua channel / channel tertentu."
+    f"\n\n  »  Perintah : {cmd}startkomen"
+    f"\n  »  Kegunaan : Aktifkan auto komen ke semua channel / channel tertentu."
+    f"\n\n  »  Perintah : {cmd}delkomen <trigger> <@channel>"
+    f"\n  »  Kegunaan : Menghapus trigger dari channel tertentu."
+    f"\n\n  »  Perintah : {cmd}delch <@channel>"
+    f"\n  »  Kegunaan : Menghapus semua data trigger & komen channel."
+    f"\n\n  »  Perintah : {cmd}listkomen"
+    f"\n  »  Kegunaan : Melihat daftar list auto komen."
+    f"\n\n  »  Perintah : {cmd}statuskomen"
+    f"\n  »  Kegunaan : Melihat status aktif/nonaktif tiap channel."
+    f"\n\n  »  Perintah : {cmd}addblock <kata>"
+    f"\n  »  Kegunaan : Tambahkan blockword agar pesan dengan kata itu di-skip."
+    f"\n\n  »  Perintah : {cmd}delblock <kata>"
+    f"\n  »  Kegunaan : Hapus blockword global."
+    f"\n\n  »  Perintah : {cmd}listblock"
+    f"\n  »  Kegunaan : Lihat semua blockword global."
 })
