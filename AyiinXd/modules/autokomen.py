@@ -218,77 +218,74 @@ async def _log_botlog(channel_username: str, msg_id: int, trigger: str, reply_pr
 # CORE: SEND AUTOKOMEN (DISCUSSION REPLY)
 # ─────────────────────────────────────────────────────────────
 async def send_autokomen(event_or_msg, komen):
-    """
-    Send a reply into the discussion thread (if available).
-    No manual delay. FloodWait respected.
-    """
     try:
-        src_chat_id = getattr(event_or_msg, "chat_id", None)
-        src_msg_id = getattr(event_or_msg, "id", None)
-        if not src_chat_id or not src_msg_id:
-            return False
+        src_chat_id = event_or_msg.chat_id
+        src_msg_id = event_or_msg.id
 
-        # Find linked discussion message
-        peer = await event_or_msg.get_input_chat()
-        discussion = await bot(GetDiscussionMessageRequest(
-            peer=peer,
-            msg_id=event_or_msg.id
-        ))
-
-        if not discussion or not getattr(discussion, "messages", None):
-            return False
-
-        reply_msg = discussion.messages[0]
-
-        # destination chat id
-        to_id = getattr(reply_msg, "to_id", None)
-        dest_chat_id = getattr(to_id, "channel_id", None)
-        if not dest_chat_id:
-            return False
-
-        # cooldown skip (fast, no sleep)
-        if _cooldown_hit(int(dest_chat_id)):
-            return False
-
-        # Choose message content
-        out_text = None
-        if getattr(komen, "msg_id", None) and getattr(komen, "msg_chat", None):
-            try:
-                src = await bot.get_messages(int(komen.msg_chat), ids=int(komen.msg_id))
-                out_text = (src.text or "💬 (Kosong / bukan teks)")
-            except Exception as e:
-                await _safe_send_me(f"[ERROR Auto-Komen Msg] {e}")
-                return False
+        # Ambil teks reply
+        if komen.msg_id and komen.msg_chat:
+            src = await bot.get_messages(int(komen.msg_chat), ids=int(komen.msg_id))
+            out_text = src.text or "💬"
         else:
-            out_text = getattr(komen, "reply", None)
+            out_text = komen.reply
 
         if not out_text:
             return False
 
-        # Send (FloodWait handled)
-        try:
-            await bot.send_message(
-                entity=int(dest_chat_id),
-                message=out_text,
-                reply_to=reply_msg.id
-            )
-        except FloodWaitError as e:
-            # Telegram dictates the wait time (not "manual delay")
-            await asyncio.sleep(e.seconds)
-            await bot.send_message(
-                entity=int(dest_chat_id),
-                message=out_text,
-                reply_to=reply_msg.id
-            )
+        peer = await event_or_msg.get_input_chat()
 
-        _mark_cooldown(int(dest_chat_id))
+        # ================================
+        # 1️⃣ PAKSA BANGUN DISCUSSION
+        # ================================
+        discussion = await bot(GetDiscussionMessageRequest(
+            peer=peer,
+            msg_id=src_msg_id
+        ))
+
+        # Kalau discussion belum ada → paksa
+        if not discussion.messages:
+            # kirim dummy (stealth)
+            dummy = await bot.send_message(
+                entity=src_chat_id,
+                message="hmu",
+                reply_to=src_msg_id
+            )
+            # hapus dummy
+            await dummy.delete()
+
+            # ambil ulang discussion
+            discussion = await bot(GetDiscussionMessageRequest(
+                peer=peer,
+                msg_id=src_msg_id
+            ))
+
+        if not discussion.messages:
+            return False  # ini HARUSNYA hampir gak pernah kejadian
+
+        reply_msg = discussion.messages[0]
+        dest_chat_id = reply_msg.to_id.channel_id
+
+        # cooldown
+        if _cooldown_hit(dest_chat_id):
+            return False
+
+        # ================================
+        # 2️⃣ KIRIM AUTOKOMEN ASLI
+        # ================================
+        await bot.send_message(
+            entity=dest_chat_id,
+            message=out_text,
+            reply_to=reply_msg.id
+        )
+
+        _mark_cooldown(dest_chat_id)
         return True
 
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds)
         return False
     except Exception as e:
-        await _safe_send_me(f"[ERROR Auto-Komen] {e}")
+        await _safe_send_me(f"[AUTO-KOMEN ERROR] {e}")
         return False
 
 
