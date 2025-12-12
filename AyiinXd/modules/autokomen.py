@@ -284,102 +284,79 @@ async def send_autokomen(event_or_msg, komen):
 # ─────────────────────────────────────────────────────────────
 # LISTENER MODE (STEALTH: ONLY THIS)
 # ─────────────────────────────────────────────────────────────
-@bot.on(events.NewMessage)
-async def komen_listener(event):
-    # DEBUG: pastikan handler hidup
-    await bot.send_message(
-        "me",
-        f"✅ handler kepanggil | chat_id={event.chat_id} msg_id={event.id}"
-    )
+async def polling_worker():
+    await asyncio.sleep(5)
 
-    global polling_active
-
-    # global switch
-    if not polling_active:
-        return
-
-    # hanya channel
-    if not event.is_channel:
-        return
-
-    # hanya POST channel (bukan edit / service)
-    if not getattr(event.message, "post", False):
-        return
-
-    # ambil chat dengan cara aman
-    chat = await event.get_chat()
-    username = getattr(chat, "username", None)
-    if not username:
-        return
-
-    channel_id = f"@{username}"
-
-    # load cache kalau belum
-    if not CACHE_READY:
-        await refresh_cache(full=True)
-
-    # skip kalau channel nonaktif
-    if channel_id in stopped_channels:
-        return
-
-    # ambil text post
-    text = _normalize_text(event.raw_text)
-    if not text:
-        return
-
-    # cek blockword global
-    if _contains_blockword(text):
-        return
-
-    # ambil trigger dari cache / DB
-    triggers = TRIGGER_CACHE.get(channel_id)
-    if triggers is None:
+    while True:
         try:
-            triggers = db.get_triggers(channel_id) or []
-            TRIGGER_CACHE[channel_id] = triggers
-        except Exception:
-            return
+            if not polling_active:
+                await asyncio.sleep(20)
+                continue
 
-    if not triggers:
-        return
+            # ambil semua channel unik
+            channels = db.get_all_channels()
 
-    # cek trigger
-    for komen in triggers:
-        trig = getattr(komen, "trigger", None)
-        if not trig:
-            continue
-
-        trig_norm = trig.lower()
-
-        # anti dobel
-        key = _responded_key(event.chat_id, event.id, trig_norm)
-        if _already_responded(key):
-            continue
-
-        # match trigger
-        if trig_norm in text:
-            ok = await send_autokomen(event, komen)
-
-            if ok:
-                _mark_responded(key)
-
-                # update last_msg_id di DB
+            for (channel_id,) in channels:
                 try:
-                    db.update_last_msg(channel_id, trig_norm, event.id)
+                    if not channel_id:
+                        continue
+
+                    # skip channel nonaktif
+                    if channel_id in stopped_channels:
+                        continue
+
+                    # ambil post TERBARU channel
+                    msgs = await bot.get_messages(channel_id, limit=1)
+                    if not msgs:
+                        continue
+
+                    msg = msgs[0]
+
+                    # hanya post channel
+                    if not getattr(msg, "post", False):
+                        continue
+
+                    text = (msg.text or "").lower().strip()
+                    if not text:
+                        continue
+
+                    # blockword global
+                    if _contains_blockword(text):
+                        continue
+
+                    triggers = db.get_triggers(channel_id)
+                    if not triggers:
+                        continue
+
+                    for komen in triggers:
+                        trig = (komen.trigger or "").lower()
+
+                        # anti dobel post
+                        if komen.last_msg_id == msg.id:
+                            continue
+
+                        # match trigger
+                        if trig and trig in text:
+                            ok = await send_autokomen(msg, komen)
+
+                            if ok:
+                                try:
+                                    db.update_last_msg(channel_id, trig, msg.id)
+                                except Exception:
+                                    pass
+
+                            break  # satu komen per post
+
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds)
                 except Exception:
-                    pass
+                    continue
 
-                # log botlog
-                reply_preview = getattr(komen, "reply", None) or ""
-                await _log_botlog(
-                    channel_id,
-                    event.id,
-                    trig_norm,
-                    reply_preview
-                )
+        except Exception:
+            pass
 
-            # satu trigger per post
-            break
+        # interval stealth
+        await asyncio.sleep(20)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -667,11 +644,12 @@ async def _(event):
 # ─────────────────────────────────────────────────────────────
 # STARTUP (STEALTH: cache only, no polling)
 # ─────────────────────────────────────────────────────────────
-async def start_stealth():
+async def start_polling():
     await asyncio.sleep(5)
     await refresh_cache(full=True)
+    bot.loop.create_task(polling_worker())
 
-bot.loop.create_task(start_stealth())
+bot.loop.create_task(start_polling())
 
 
 # ─────────────────────────────────────────────────────────────
