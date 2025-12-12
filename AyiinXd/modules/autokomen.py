@@ -263,7 +263,7 @@ async def send_autokomen(event_or_msg, komen):
             return False  # ini HARUSNYA hampir gak pernah kejadian
 
         reply_msg = discussion.messages[0]
-        dest_chat_id = reply_msg.to_id.channel_id
+        dest_chat_id = reply_msg.chat_id
 
         # cooldown
         if _cooldown_hit(dest_chat_id):
