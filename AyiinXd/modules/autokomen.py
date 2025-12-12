@@ -26,7 +26,7 @@ RESPONDED_MAX = 8000
 RESPONDED_TTL = 6 * 60 * 60  # 6 hours
 
 # Logging verbosity
-STEALTH_SILENT = True  # True = minimize "me" spam errors
+STEALTH_SILENT = False  # True = minimize "me" spam errors
 
 
 # ─────────────────────────────────────────────────────────────
