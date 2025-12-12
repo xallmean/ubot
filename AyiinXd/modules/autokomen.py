@@ -218,13 +218,21 @@ async def _log_botlog(channel_username: str, msg_id: int, trigger: str, reply_pr
 # CORE: SEND AUTOKOMEN (DISCUSSION REPLY)
 # ─────────────────────────────────────────────────────────────
 async def send_autokomen(event_or_msg, komen):
+    """
+    Kirim autokomen ke DISCUSSION GROUP (bukan channel).
+    Aman untuk akun member (tanpa admin).
+    """
     try:
-        src_chat_id = event_or_msg.chat_id
-        src_msg_id = event_or_msg.id
+        # pastikan data dasar ada
+        if not event_or_msg.chat_id or not event_or_msg.id:
+            return False
 
-        # Ambil teks reply
+        # ambil isi komen
         if komen.msg_id and komen.msg_chat:
-            src = await bot.get_messages(int(komen.msg_chat), ids=int(komen.msg_id))
+            src = await bot.get_messages(
+                int(komen.msg_chat),
+                ids=int(komen.msg_id)
+            )
             out_text = src.text or "💬"
         else:
             out_text = komen.reply
@@ -232,46 +240,30 @@ async def send_autokomen(event_or_msg, komen):
         if not out_text:
             return False
 
+        # ambil discussion message
         peer = await event_or_msg.get_input_chat()
-
-        # ================================
-        # 1️⃣ PAKSA BANGUN DISCUSSION
-        # ================================
-        discussion = await bot(GetDiscussionMessageRequest(
-            peer=peer,
-            msg_id=src_msg_id
-        ))
-
-        # Kalau discussion belum ada → paksa
-        if not discussion.messages:
-            # kirim dummy (stealth)
-            dummy = await bot.send_message(
-                entity=src_chat_id,
-                message="hmu",
-                reply_to=src_msg_id
-            )
-            # hapus dummy
-            await dummy.delete()
-
-            # ambil ulang discussion
-            discussion = await bot(GetDiscussionMessageRequest(
+        result = await bot(
+            GetDiscussionMessageRequest(
                 peer=peer,
-                msg_id=src_msg_id
-            ))
+                msg_id=event_or_msg.id
+            )
+        )
 
-        if not discussion.messages:
-            return False  # ini HARUSNYA hampir gak pernah kejadian
+        if not result.messages:
+            # discussion belum tersedia di API → skip
+            return False
 
-        reply_msg = discussion.messages[0]
+        reply_msg = result.messages[0]
+
+        # 🔥 INI KUNCI UTAMA
+        # kirim ke DISCUSSION GROUP
         dest_chat_id = reply_msg.chat_id
 
-        # cooldown
+        # cooldown per group
         if _cooldown_hit(dest_chat_id):
             return False
 
-        # ================================
-        # 2️⃣ KIRIM AUTOKOMEN ASLI
-        # ================================
+        # kirim autokomen
         await bot.send_message(
             entity=dest_chat_id,
             message=out_text,
@@ -294,39 +286,52 @@ async def send_autokomen(event_or_msg, komen):
 # ─────────────────────────────────────────────────────────────
 @bot.on(events.NewMessage)
 async def komen_listener(event):
-    await bot.send_message("me", f"✅ handler kepanggil: chat_id={event.chat_id} msg_id={event.id}")
+    # DEBUG: pastikan handler hidup
+    await bot.send_message(
+        "me",
+        f"✅ handler kepanggil | chat_id={event.chat_id} msg_id={event.id}"
+    )
 
     global polling_active
 
+    # global switch
     if not polling_active:
         return
-    if not isinstance(event.message, Message):
-        return
+
+    # hanya channel
     if not event.is_channel:
         return
+
+    # hanya POST channel (bukan edit / service)
+    if not getattr(event.message, "post", False):
+        return
+
+    # ambil chat dengan cara aman
     chat = await event.get_chat()
     username = getattr(chat, "username", None)
     if not username:
         return
+
     channel_id = f"@{username}"
 
-    # Ensure cache loaded
+    # load cache kalau belum
     if not CACHE_READY:
         await refresh_cache(full=True)
 
-    channel_id = f"@{event.chat.username}"
-
-    # skip if stopped
+    # skip kalau channel nonaktif
     if channel_id in stopped_channels:
         return
 
+    # ambil text post
     text = _normalize_text(event.raw_text)
+    if not text:
+        return
 
-    # global blockword
+    # cek blockword global
     if _contains_blockword(text):
         return
 
-    # triggers from cache (fast) or fallback DB
+    # ambil trigger dari cache / DB
     triggers = TRIGGER_CACHE.get(channel_id)
     if triggers is None:
         try:
@@ -338,35 +343,42 @@ async def komen_listener(event):
     if not triggers:
         return
 
-    # trigger match
+    # cek trigger
     for komen in triggers:
         trig = getattr(komen, "trigger", None)
         if not trig:
             continue
-        trig_norm = str(trig).lower()
 
-        # skip if already handled this message for this trigger
+        trig_norm = trig.lower()
+
+        # anti dobel
         key = _responded_key(event.chat_id, event.id, trig_norm)
         if _already_responded(key):
             continue
 
-        # match
+        # match trigger
         if trig_norm in text:
             ok = await send_autokomen(event, komen)
+
             if ok:
                 _mark_responded(key)
 
-                # update DB last_msg_id (fix from old version)
+                # update last_msg_id di DB
                 try:
                     db.update_last_msg(channel_id, trig_norm, event.id)
                 except Exception:
                     pass
 
-                # botlog
+                # log botlog
                 reply_preview = getattr(komen, "reply", None) or ""
-                await _log_botlog(channel_id, event.id, trig_norm, reply_preview)
+                await _log_botlog(
+                    channel_id,
+                    event.id,
+                    trig_norm,
+                    reply_preview
+                )
 
-            # only one trigger response per message
+            # satu trigger per post
             break
 
 
