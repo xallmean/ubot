@@ -1,9 +1,26 @@
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, ARRAY, inspect, text
+from sqlalchemy import (
+    Column,
+    String,
+    BigInteger,
+    Integer,
+    Boolean,
+    ARRAY,
+    inspect,
+    text,
+    Index,
+)
 from AyiinXd.modules.sql_helper import BASE, SESSION
 
 
+# ─────────────────────────────────────────────────────────────
+# MODEL
+# ─────────────────────────────────────────────────────────────
 class AutoKomen(BASE):
     __tablename__ = "auto_komen"
+
+    __table_args__ = (
+        Index("idx_autokomen_channel_trigger", "channel_id", "trigger"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     channel_id = Column(String, index=True)
@@ -13,7 +30,9 @@ class AutoKomen(BASE):
     msg_chat = Column(String, nullable=True)
     last_msg_id = Column(BigInteger, nullable=True)
     active = Column(Boolean, default=True)
-    blockwords = Column(ARRAY(String), default=[])
+
+    # ⚠️ IMPORTANT: default=list (bukan [])
+    blockwords = Column(ARRAY(String), default=list)
 
     def __init__(self, channel_id, trigger, reply=None, msg_id=None, msg_chat=None):
         self.channel_id = channel_id
@@ -23,21 +42,37 @@ class AutoKomen(BASE):
         self.msg_chat = msg_chat
 
 
-# --- AUTO MIGRATE ---
+# ─────────────────────────────────────────────────────────────
+# AUTO MIGRATE (SAFE)
+# ─────────────────────────────────────────────────────────────
 def auto_migrate():
     inspector = inspect(SESSION.bind)
     try:
         tables = inspector.get_table_names()
+
+        # Create table if not exists
         if "auto_komen" not in tables:
             BASE.metadata.create_all(SESSION.bind)
             return
 
         columns = [col["name"] for col in inspector.get_columns("auto_komen")]
+
         if "active" not in columns:
-            SESSION.execute(text("ALTER TABLE auto_komen ADD COLUMN active BOOLEAN DEFAULT TRUE"))
+            SESSION.execute(
+                text("ALTER TABLE auto_komen ADD COLUMN active BOOLEAN DEFAULT TRUE")
+            )
+
         if "blockwords" not in columns:
-            SESSION.execute(text("ALTER TABLE auto_komen ADD COLUMN blockwords TEXT[] DEFAULT '{}'::text[]"))
+            # PostgreSQL compatible
+            SESSION.execute(
+                text(
+                    "ALTER TABLE auto_komen "
+                    "ADD COLUMN blockwords TEXT[] DEFAULT '{}'::text[]"
+                )
+            )
+
         SESSION.commit()
+
     except Exception as e:
         print(f"[ERROR MIGRATE AUTOKOMEN] {e}")
         SESSION.rollback()
@@ -46,9 +81,15 @@ def auto_migrate():
 auto_migrate()
 
 
-# --- FUNGSI AUTO KOMEN ---
+# ─────────────────────────────────────────────────────────────
+# CORE FUNCTIONS
+# ─────────────────────────────────────────────────────────────
 def add_filter(channel_id, trigger):
-    exist = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
+    exist = (
+        SESSION.query(AutoKomen)
+        .filter_by(channel_id=channel_id, trigger=trigger)
+        .first()
+    )
     if not exist:
         data = AutoKomen(channel_id, trigger)
         SESSION.add(data)
@@ -56,7 +97,11 @@ def add_filter(channel_id, trigger):
 
 
 def set_reply(channel_id, trigger, reply=None, msg_id=None, msg_chat=None):
-    data = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
+    data = (
+        SESSION.query(AutoKomen)
+        .filter_by(channel_id=channel_id, trigger=trigger)
+        .first()
+    )
     if data:
         data.reply = reply
         data.msg_id = msg_id
@@ -65,14 +110,23 @@ def set_reply(channel_id, trigger, reply=None, msg_id=None, msg_chat=None):
 
 
 def update_last_msg(channel_id, trigger, last_id):
-    data = SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).first()
+    data = (
+        SESSION.query(AutoKomen)
+        .filter_by(channel_id=channel_id, trigger=trigger)
+        .first()
+    )
     if data:
         data.last_msg_id = last_id
         SESSION.commit()
 
 
 def get_triggers(channel_id):
-    return SESSION.query(AutoKomen).filter_by(channel_id=channel_id).all()
+    """Ambil trigger aktif saja (STEALTH SAFE)"""
+    return (
+        SESSION.query(AutoKomen)
+        .filter_by(channel_id=channel_id, active=True)
+        .all()
+    )
 
 
 def get_all_komen():
@@ -94,14 +148,32 @@ def delete_channel(channel_id):
 
 def delete_trigger(channel_id, trigger):
     try:
-        SESSION.query(AutoKomen).filter_by(channel_id=channel_id, trigger=trigger).delete()
+        SESSION.query(AutoKomen).filter_by(
+            channel_id=channel_id, trigger=trigger
+        ).delete()
         SESSION.commit()
     except Exception:
         SESSION.rollback()
         raise
 
 
-# --- BLOCKWORDS GLOBAL ---
+def activate_channel(channel_id):
+    SESSION.query(AutoKomen).filter_by(channel_id=channel_id).update(
+        {"active": True}
+    )
+    SESSION.commit()
+
+
+def deactivate_channel(channel_id):
+    SESSION.query(AutoKomen).filter_by(channel_id=channel_id).update(
+        {"active": False}
+    )
+    SESSION.commit()
+
+
+# ─────────────────────────────────────────────────────────────
+# BLOCKWORDS (GLOBAL)
+# ─────────────────────────────────────────────────────────────
 def add_blockwords_global(words):
     """
     Tambah banyak kata block sekaligus (dipisah spasi)
@@ -120,6 +192,7 @@ def add_blockwords_global(words):
 
         SESSION.commit()
         return len(word_list)
+
     except Exception as e:
         print(f"[SQL] add_blockwords_global error: {e}")
         SESSION.rollback()
@@ -141,7 +214,7 @@ def del_blockword_global(word):
 
 
 def get_blockwords():
-    """Ambil semua blockword global"""
+    """Ambil semua blockword global (unique)"""
     try:
         rows = SESSION.query(AutoKomen.blockwords).all()
         words = set()
