@@ -229,12 +229,12 @@ async def send_autokomen(event_or_msg, komen):
             return False
 
         # Find linked discussion message
-        discussion = await bot(
-            GetDiscussionMessageRequest(
-                peer=src_chat_id,
-                msg_id=src_msg_id
-            )
-        )
+        peer = await event_or_msg.get_input_chat()
+        discussion = await bot(GetDiscussionMessageRequest(
+            peer=peer,
+            msg_id=event_or_msg.id
+        ))
+
         if not discussion or not getattr(discussion, "messages", None):
             return False
 
@@ -297,6 +297,8 @@ async def send_autokomen(event_or_msg, komen):
 # ─────────────────────────────────────────────────────────────
 @bot.on(events.NewMessage)
 async def komen_listener(event):
+    await bot.send_message("me", f"✅ handler kepanggil: chat_id={event.chat_id} msg_id={event.id}")
+
     global polling_active
 
     if not polling_active:
@@ -305,8 +307,11 @@ async def komen_listener(event):
         return
     if not event.is_channel:
         return
-    if not getattr(event, "chat", None) or not getattr(event.chat, "username", None):
+    chat = await event.get_chat()
+    username = getattr(chat, "username", None)
+    if not username:
         return
+    channel_id = f"@{username}"
 
     # Ensure cache loaded
     if not CACHE_READY:
