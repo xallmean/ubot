@@ -256,7 +256,7 @@ async def _(event):
     if len(parts) < 3:
         return await event.edit(
             "Format yang benar.\n"
-            f"Contoh:\n`{cmd}setkomen promo Ini isi komen`"
+            f"Contoh:\n`{cmd}setkomen <trigger> <pesan>`"
         )
 
     trigger = parts[1].strip().lower()
