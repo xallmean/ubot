@@ -152,25 +152,3 @@ def get_blockwords():
     except Exception as e:
         print(f"[SQL] get_blockwords error: {e}")
         return []
-
-# --- AKTIF / NONAKTIF CHANNEL ---
-def activate_channel(channel_id):
-    try:
-        SESSION.query(AutoKomen).filter_by(channel_id=channel_id).update(
-            {"active": True}
-        )
-        SESSION.commit()
-    except Exception:
-        SESSION.rollback()
-        raise
-
-
-def deactivate_channel(channel_id):
-    try:
-        SESSION.query(AutoKomen).filter_by(channel_id=channel_id).update(
-            {"active": False}
-        )
-        SESSION.commit()
-    except Exception:
-        SESSION.rollback()
-        raise
