@@ -38,8 +38,8 @@ async def sync_autokomen_state():
         polling_active = active_count > 0
         await bot.send_message(
             "me",
-            f"✅ **AutoKomen Sinkronisasi Berhasil**\n"
-            f"📊 Aktif: `{active_count}` | Nonaktif: `{inactive_count}`",
+            f"**AutoKomen Sync**\n"
+            f"Aktif: `{active_count}` | Nonaktif: `{inactive_count}`",
         )
     except Exception as e:
         await bot.send_message("me", f"⚠️ Gagal sync status autokomen: {e}")
@@ -73,7 +73,7 @@ async def komen_listener(event):
         print(f"[AutoKomen] Text: {text}")
         for bw in blockwords:
             if bw and bw in text:
-                print(f"[AutoKomen] ❌ Skip {channel_id} karena mengandung blockword: {bw}")
+                print(f"[AutoKomen] Skip {channel_id} karena mengandung blockword: {bw}")
                 return
     # ===================================
     # ==========================
@@ -116,7 +116,7 @@ async def polling_worker():
                     if blockwords:
                         for bw in blockwords:
                             if bw and bw in text:
-                                print(f"[Polling] ❌ Skip {channel_username} (mengandung blockword: {bw})")
+                                print(f"[Polling] Skip {channel_username} (mengandung blockword: {bw})")
                                 raise StopIteration  # langsung loncat channel berikut
                     # ==================================
 
@@ -140,13 +140,12 @@ async def polling_worker():
                                     reply_preview = (komen.reply or "-")[:100]
                                     await bot.send_message(
                                         BOTLOG_CHATID,
-                                        f"📢 **Auto-Komen Notification!**\n"
+                                        f"**Notification!**\n"
                                         f"━━━━━━━━━━━━━━━\n"
-                                        f"🕒 **Waktu:** `{waktu}`\n"
-                                        f"🏷️ **Channel:** `{channel_username}`\n"
-                                        f"💬 **Trigger:** `{komen.trigger}`\n"
-                                        f"📨 **Reply:** `{reply_preview}`\n"
-                                        f"🔗 [Lihat Pesan](https://t.me/{username_clean}/{msg.id})",
+                                        f"**Channel:** `{channel_username}`\n"
+                                        f"**Trigger:** `{komen.trigger}`\n"
+                                        f"**Reply:** `{reply_preview}`\n"
+                                        f"[Lihat Pesan](https://t.me/{username_clean}/{msg.id})",
                                         link_preview=False,
                                     )
                                 except Exception as e:
@@ -185,7 +184,7 @@ async def send_autokomen(event_or_msg, komen):
                 msg = await bot.get_messages(int(komen.msg_chat), ids=int(komen.msg_id))
                 await bot.send_message(
                     entity=reply_chat_id,
-                    message=msg.text or "💬 (Kosong / bukan teks)",
+                    message=msg.text or "(Kosong / bukan teks)",
                     reply_to=reply_msg.id
                 )
             except Exception as e:
@@ -213,14 +212,14 @@ async def _(event):
         db.SESSION.query(db.AutoKomen).update({"active": False})
         db.SESSION.commit()
         stopped_channels.clear()
-        return await event.edit("🛑 Auto-komen **dihentikan di semua channel.**")
+        return await event.edit("Auto-komen **dihentikan di semua channel.**")
 
     if not target.startswith("@"):
         target = "@" + target
 
     db.deactivate_channel(target)
     stopped_channels.add(target)
-    await event.edit(f"🛑 Auto-komen dihentikan di channel {target}.")
+    await event.edit(f"Auto-komen dihentikan di channel {target}.")
 
 
 @ayiin_cmd(pattern="startkomen(?: |$)(.*)")
@@ -234,7 +233,7 @@ async def _(event):
         db.SESSION.query(db.AutoKomen).update({"active": True})
         db.SESSION.commit()
         stopped_channels.clear()
-        return await event.edit("✅ Auto-komen **dinyalakan kembali untuk semua channel.**")
+        return await event.edit("Auto-komen **dinyalakan kembali untuk semua channel.**")
 
     if not target.startswith("@"):
         target = "@" + target
@@ -242,9 +241,9 @@ async def _(event):
     db.activate_channel(target)
     if target in stopped_channels:
         stopped_channels.remove(target)
-        return await event.edit(f"✅ Auto-komen diaktifkan kembali untuk {target}.")
+        return await event.edit(f"Auto-komen diaktifkan kembali untuk {target}.")
     else:
-        return await event.edit(f"ℹ️ Auto-komen di {target} sudah aktif.")
+        return await event.edit(f"Auto-komen di {target} sudah aktif.")
 
 
 @ayiin_cmd(pattern="setch(?: |$)(.*)")
@@ -265,7 +264,7 @@ async def _(event):
             ch = "@" + ch
         db.add_filter(ch, trigger)
 
-    await event.edit(f"✅ Trigger `{trigger}` disimpan di channel: `{', '.join(channels)}`")
+    await event.edit(f"Trigger `{trigger}` disimpan di channel: `{', '.join(channels)}`")
 
 
 @ayiin_cmd(pattern="setkomen(?: |$)(.*)")
@@ -273,7 +272,7 @@ async def _(event):
     raw = event.text
     if not raw:
         return await event.edit(
-            f"❌ Format:\n"
+            f"Format yang benar:\n"
             f"`{cmd}setkomen <trigger> <pesan>`"
         )
 
@@ -282,7 +281,7 @@ async def _(event):
     parts = raw.split(maxsplit=2)
     if len(parts) < 3:
         return await event.edit(
-            "❌ Format salah.\n"
+            "Format yang benar.\n"
             f"Contoh:\n`{cmd}setkomen promo Ini isi komen`"
         )
 
@@ -292,7 +291,7 @@ async def _(event):
     reply_text = raw.split(parts[0] + " " + parts[1], 1)[1].strip()
 
     if not reply_text:
-        return await event.edit("❌ Pesan komen tidak boleh kosong.")
+        return await event.edit("Pesan komen tidak boleh kosong.")
 
     # ambil channel yang pakai trigger ini
     all_data = db.get_all_komen()
@@ -300,7 +299,7 @@ async def _(event):
 
     if not channels:
         return await event.edit(
-            f"❌ Trigger `{trigger}` belum dipakai.\n"
+            f"Trigger `{trigger}` belum dipakai.\n"
             f"Pakai `{cmd}setch {trigger} @channel` dulu."
         )
 
@@ -314,10 +313,10 @@ async def _(event):
         )
 
     await event.edit(
-        f"✅ **Auto-komen disimpan**\n"
-        f"🔑 Trigger: `{trigger}`\n"
-        f"📡 Channel: `{len(channels)}`\n\n"
-        f"💬 Preview:\n{reply_text[:500]}"
+        f"**Berhasil disimpan**\n"
+        f"Trigger: `{trigger}`\n"
+        f"Channel: `{len(channels)}`\n\n"
+        f"Preview:\n{reply_text[:500]}"
     )
 
 
@@ -343,9 +342,9 @@ async def _(event):
 
     msg = ""
     if deleted:
-        msg += f"🗑️ Trigger `{trig}` berhasil dihapus dari: {', '.join(deleted)}\n"
+        msg += f"Trigger `{trig}` berhasil dihapus dari: {', '.join(deleted)}\n"
     if not_found:
-        msg += f"❌ Channel tidak ditemukan di database: {', '.join(not_found)}"
+        msg += f"Channel tidak ditemukan di database: {', '.join(not_found)}"
 
     await event.edit(msg)
 
@@ -354,7 +353,7 @@ async def _(event):
 async def _(event):
     text = event.pattern_match.group(1).strip()
     if not text:
-        return await event.edit("❌ Harap masukkan minimal 1 channel.")
+        return await event.edit("Harap masukkan minimal 1 channel.")
 
     channels = text.split()
     deleted, not_found = [], []
@@ -371,9 +370,9 @@ async def _(event):
 
     msg = ""
     if deleted:
-        msg += f"🗑️ Trigger & komen berhasil dihapus dari: {', '.join(deleted)}\n"
+        msg += f"Trigger & komen berhasil dihapus dari: {', '.join(deleted)}\n"
     if not_found:
-        msg += f"❌ Channel tidak ditemukan di database: {', '.join(not_found)}"
+        msg += f"Channel tidak ditemukan di database: {', '.join(not_found)}"
 
     await event.edit(msg)
 
@@ -393,7 +392,7 @@ async def _(event):
             channel = "@" + str(channel)
         grouped.setdefault(trigger, []).append((channel, reply))
 
-    msg = "**📋 Daftar Auto Komen :**\n\n"
+    msg = "**Daftar Auto Komen :**\n\n"
 
     for trigger, items in grouped.items():
         channels = sorted({ch for ch, _ in items})
@@ -421,7 +420,7 @@ async def _(event):
     """Lihat status aktif/nonaktif auto-komen tiap channel"""
     data = db.get_all_komen()
     if not data:
-        return await event.edit("❌ Belum ada data auto-komen.")
+        return await event.edit("Belum ada data auto-komen.")
 
     aktif, nonaktif = [], []
 
@@ -433,11 +432,11 @@ async def _(event):
             if row.channel_id not in nonaktif:
                 nonaktif.append(row.channel_id)
 
-    msg = "**📊 Status AutoKomen**\n\n"
+    msg = "**Status AutoKomen**\n\n"
     if aktif:
-        msg += f"✅ **Aktif** ({len(aktif)}):\n" + "\n".join(aktif) + "\n\n"
+        msg += f"**Aktif** ({len(aktif)}):\n" + "\n".join(aktif) + "\n\n"
     if nonaktif:
-        msg += f"🛑 **Nonaktif** ({len(nonaktif)}):\n" + "\n".join(nonaktif)
+        msg += f"**Nonaktif** ({len(nonaktif)}):\n" + "\n".join(nonaktif)
     if not aktif and not nonaktif:
         msg += "_Belum ada data channel._"
 
@@ -450,28 +449,28 @@ async def _(event):
 async def _(event):
     words = event.pattern_match.group(1)
     if not words:
-        return await event.edit("⚠️ Contoh: `.addblock sfs auto viu jaseb telegram`")
+        return await event.edit("Contoh: `.addblock sfs auto viu jaseb telegram`")
 
     count = db.add_blockwords_global(words)
-    await event.edit(f"✅ {count} kata ditambahkan ke daftar blockword global.")
+    await event.edit(f"{count} kata ditambahkan ke daftar blockword global.")
 
 
 @ayiin_cmd(pattern="delblock(?: |$)(.*)")
 async def _(event):
     word = event.pattern_match.group(1).strip().lower()
     if not word:
-        return await event.edit("⚠️ Contoh: `.delblock sfs`")
+        return await event.edit("Contoh: `.delblock sfs`")
 
     db.del_blockword_global(word)
-    await event.edit(f"🗑️ Blockword `{word}` dihapus dari semua channel.")
+    await event.edit(f"Blockword `{word}` dihapus dari semua channel.")
 
 
 @ayiin_cmd(pattern="listblock$")
 async def _(event):
     blocks = db.get_blockwords()
     if not blocks:
-        return await event.edit("🚫 Belum ada blockword global.")
-    msg = "🚫 **Daftar Blockword Global:**\n" + "\n".join([f"- {b}" for b in blocks])
+        return await event.edit("Belum ada blockword.")
+    msg = "**Daftar Blockword:**\n" + "\n".join([f"- {b}" for b in blocks])
     await event.edit(msg)
 
 
@@ -487,8 +486,8 @@ CMD_HELP.update({
     "autokomen": f"Plugin : autokomen\
 \n\n  »  Perintah : {cmd}setch <trigger> <@channel>\
 \n  »  Kegunaan : Set trigger untuk satu atau lebih channel.\
-\n\n  »  Perintah : {cmd}setkomen <trigger> (balas ke pesan)\
-\n  »  Kegunaan : Set isi komen (teks/media) untuk trigger tertentu.\
+\n\n  »  Perintah : {cmd}setkomen <trigger> <pesan autokomen>\
+\n  »  Kegunaan : Set isi komen untuk trigger tertentu.\
 \n\n  »  Perintah : {cmd}stopkomen\
 \n  »  Kegunaan : Stop auto komen ke semua channel.\
 \n  »  Kegunaan : Aktifkan auto komen di channel tertentu.\
