@@ -127,13 +127,19 @@ def add_blockwords_global(words):
 
 
 def del_blockword_global(word):
-    """Hapus satu kata block dari semua channel"""
+    """Hapus satu kata block dari semua channel (SAFE)"""
     try:
         word = word.lower().strip()
         rows = SESSION.query(AutoKomen).all()
+
         for row in rows:
-            if row.blockwords and word in row.blockwords:
-                row.blockwords.remove(word)
+            if row.blockwords:
+                # ASSIGN ULANG LIST (WAJIB)
+                row.blockwords = [
+                    w for w in row.blockwords
+                    if w.lower() != word
+                ]
+
         SESSION.commit()
     except Exception as e:
         print(f"[SQL] del_blockword_global error: {e}")
