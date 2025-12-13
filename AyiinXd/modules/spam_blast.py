@@ -55,7 +55,7 @@ async def onspamloop(event):
     data = spam_sql.get_list(nama)
     data.is_active = True
     SESSION.commit()
-    
+
     if nama in active_spams:
         return await event.edit(f"∅ spam `{nama}` sudah berjalan!")
 
@@ -66,36 +66,44 @@ async def onspamloop(event):
     async def spam_loop():
         try:
             while True:
-                grups = spam_sql.get_groups(nama)               # selalu refresh
+                grups = spam_sql.get_groups(nama)
                 berhasil, gagal = [], []
+
                 for g in grups:
-    try:
-        if media:
-            await event.client.send_file(g, media, caption=teks or "")
-        else:
-            await event.client.send_message(g, teks)
-        berhasil.append(g)
+                    try:
+                        if media:
+                            await event.client.send_file(
+                                g, media, caption=teks or ""
+                            )
+                        else:
+                            await event.client.send_message(g, teks)
+                        berhasil.append(g)
 
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-        try:
-            if media:
-                await event.client.send_file(g, media, caption=teks or "")
-            else:
-                await event.client.send_message(g, teks)
-            berhasil.append(g)
-        except Exception as e2:
-            gagal.append((g, str(e2)))
+                    except FloodWaitError as e:
+                        await asyncio.sleep(e.seconds)
+                        try:
+                            if media:
+                                await event.client.send_file(
+                                    g, media, caption=teks or ""
+                                )
+                            else:
+                                await event.client.send_message(g, teks)
+                            berhasil.append(g)
+                        except Exception as e2:
+                            gagal.append((g, str(e2)))
 
-    except Exception as e:
-        gagal.append((g, str(e)))
+                    except Exception as e:
+                        gagal.append((g, str(e)))
 
                 log = f"⎈ **SPAM `{nama}`**\n\n"
                 if berhasil:
-                    log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
+                    log += "✓ **Berhasil:**\n" + "\n".join(
+                        f"• `{x}`" for x in berhasil
+                    )
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + \
-                           "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
+                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
+                        f"• `{x}` karena `{e}`" for x, e in gagal
+                    )
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
@@ -103,6 +111,7 @@ async def onspamloop(event):
                     print(f"[SPAM LOG ERROR] {logerr}")
 
                 await asyncio.sleep(delay)
+
         except asyncio.CancelledError:
             print(f"[SPAM] Loop `{nama}` dihentikan.")
 
@@ -119,7 +128,7 @@ async def onfwloop(event):
     data = spam_sql.get_list(nama)
     data.is_active = True
     SESSION.commit()
-    
+
     if nama in active_spams:
         return await event.edit(f"∅ spam forward `{nama}` sudah berjalan!")
 
@@ -128,8 +137,12 @@ async def onfwloop(event):
         return await event.edit("✘ Link tidak valid!")
 
     chat_part, msg_id = m.group(2), int(m.group(3))
-    chat_id = int("-100"+chat_part) if m.group(1)=="c/" else \
-              (int(chat_part) if chat_part.isdigit() else chat_part)
+    chat_id = (
+        int("-100" + chat_part)
+        if m.group(1) == "c/"
+        else (int(chat_part) if chat_part.isdigit() else chat_part)
+    )
+
     msg = await event.client.get_messages(chat_id, ids=msg_id)
     await event.edit(f"⎋ forward `{nama}` sedang dimulai!")
 
@@ -138,19 +151,32 @@ async def onfwloop(event):
             while True:
                 grups = spam_sql.get_groups(nama)
                 berhasil, gagal = [], []
+
                 for g in grups:
                     try:
                         await event.client.forward_messages(g, msg)
                         berhasil.append(g)
+
+                    except FloodWaitError as e:
+                        await asyncio.sleep(e.seconds)
+                        try:
+                            await event.client.forward_messages(g, msg)
+                            berhasil.append(g)
+                        except Exception as e2:
+                            gagal.append((g, str(e2)))
+
                     except Exception as e:
                         gagal.append((g, str(e)))
 
                 log = f"⎈ **FORWARD `{nama}`**\n\n"
                 if berhasil:
-                    log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
+                    log += "✓ **Berhasil:**\n" + "\n".join(
+                        f"• `{x}`" for x in berhasil
+                    )
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + \
-                           "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
+                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
+                        f"• `{x}` karena `{e}`" for x, e in gagal
+                    )
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
@@ -158,6 +184,7 @@ async def onfwloop(event):
                     print(f"[FW LOG ERROR] {logerr}")
 
                 await asyncio.sleep(delay)
+
         except asyncio.CancelledError:
             print(f"[FW] Loop `{nama}` dihentikan.")
 
