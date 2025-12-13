@@ -387,7 +387,7 @@ async def _(event):
     for row in data:
         trigger = row.trigger
         channel = row.channel_id
-        reply = row.reply or "(Belum ada pesan)"
+        reply = row.reply or ""
         if not str(channel).startswith("@"):
             channel = "@" + str(channel)
         grouped.setdefault(trigger, []).append((channel, reply))
@@ -395,21 +395,27 @@ async def _(event):
     msg = "**Daftar Auto Komen :**\n\n"
 
     for trigger, items in grouped.items():
+        # channel unik
         channels = sorted({ch for ch, _ in items})
+
+        # pesan unik (hindari dobel karena multi channel)
+        seen = set()
+        pesan_list = []
+        for _ch, reply in items:
+            r = reply.strip()
+            if r and r not in seen:
+                seen.add(r)
+                pesan_list.append(r)
 
         msg += f"**Trigger :** `{trigger}`\n"
         msg += f"**Channel :** {' '.join(channels)}\n"
+        msg += "**pesan :**\n"
 
-        # tampilkan setiap reply (multiline aman)
-        for idx, (_ch, reply) in enumerate(items, start=1):
-            preview = reply.strip()
-            if len(preview) > 600:
-                preview = preview[:600] + "…"
-
-            msg += (
-                f"**Pesan {idx}:**\n"
-                f"{preview}\n\n"
-            )
+        for p in pesan_list:
+            # potong kalau kepanjangan, tetap aman multiline
+            if len(p) > 1000:
+                p = p[:1000] + "…"
+            msg += f"{p}\n\n"
 
         msg += "──────────────\n\n"
 
