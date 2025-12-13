@@ -23,6 +23,8 @@ TRIGGER_CACHE = {}      # { "@channel": [AutoKomenRow, ...] }
 BLOCKWORD_CACHE = []    # [ "sfs", "jaseb", ... ]
 CACHE_READY = False
 CACHE_LOCK = asyncio.Lock()
+DISCUSSION_CACHE = {}   # {(chat_id, msg_id): reply_msg}
+DISCUSSION_CACHE_MAX = 2000
 
 # =========================================================
 # UTILITIES
@@ -36,6 +38,12 @@ def contains_blockword(text: str) -> bool:
         if bw and bw in text:
             return True
     return False
+
+def _cache_put(key, value):
+    if len(DISCUSSION_CACHE) >= DISCUSSION_CACHE_MAX:
+        # buang item lama (FIFO sederhana)
+        DISCUSSION_CACHE.pop(next(iter(DISCUSSION_CACHE)))
+    DISCUSSION_CACHE[key] = value
 
 
 # =========================================================
@@ -95,18 +103,24 @@ async def refresh_cache():
 # =========================================================
 async def send_autokomen(event_or_msg, komen):
     try:
-        discussion = await bot(
-            GetDiscussionMessageRequest(
-                peer=event_or_msg.chat_id,  # 🔥 PENTING: jangan diganti
-                msg_id=event_or_msg.id
+        key = (event_or_msg.chat_id, event_or_msg.id)
+
+        if key in DISCUSSION_CACHE:
+            reply_msg = DISCUSSION_CACHE[key]
+        else:
+            discussion = await bot(
+                GetDiscussionMessageRequest(
+                    peer=event_or_msg.chat_id,  # 🔥 tetap sama
+                    msg_id=event_or_msg.id
+                )
             )
-        )
+            if not discussion.messages:
+                return False
 
-        if not discussion.messages:
-            return False
+            reply_msg = discussion.messages[0]
+            _cache_put(key, reply_msg)
 
-        reply_msg = discussion.messages[0]
-        target_chat = reply_msg.to_id.channel_id  # 🔥 BIARIN SEPERTI INI
+        target_chat = reply_msg.to_id.channel_id  # 🔥 tetap sama
 
         if komen.msg_id and komen.msg_chat:
             src = await bot.get_messages(
@@ -204,6 +218,7 @@ async def polling_worker():
 # STARTUP
 # =========================================================
 async def start():
+    DISCUSSION_CACHE.clear()
     await asyncio.sleep(5)
     await sync_state()
     await refresh_cache()
