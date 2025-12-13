@@ -69,15 +69,26 @@ async def onspamloop(event):
                 grups = spam_sql.get_groups(nama)               # selalu refresh
                 berhasil, gagal = [], []
                 for g in grups:
-                    try:
-                        if media:
-                            await event.client.send_file(g, media,
-                                                        caption=teks or "")
-                        else:
-                            await event.client.send_message(g, teks)
-                        berhasil.append(g)
-                    except Exception as e:
-                        gagal.append((g, str(e)))
+    try:
+        if media:
+            await event.client.send_file(g, media, caption=teks or "")
+        else:
+            await event.client.send_message(g, teks)
+        berhasil.append(g)
+
+    except FloodWaitError as e:
+        await asyncio.sleep(e.seconds)
+        try:
+            if media:
+                await event.client.send_file(g, media, caption=teks or "")
+            else:
+                await event.client.send_message(g, teks)
+            berhasil.append(g)
+        except Exception as e2:
+            gagal.append((g, str(e2)))
+
+    except Exception as e:
+        gagal.append((g, str(e)))
 
                 log = f"⎈ **SPAM `{nama}`**\n\n"
                 if berhasil:
