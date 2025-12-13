@@ -16,7 +16,8 @@ POLL_INTERVAL = 20
 # ===== INIT STATE =====
 stopped_channels = set()
 polling_active = True
-
+BLOCKWORD_CACHE = []
+BLOCKWORD_READY = False
 
 # ===== Sinkronisasi Status =====
 async def sync_autokomen_state():
@@ -44,44 +45,14 @@ async def sync_autokomen_state():
     except Exception as e:
         await bot.send_message("me", f"⚠️ Gagal sync status autokomen: {e}")
 
-
-# ===== LISTENER MODE =====
-@bot.on(events.NewMessage(incoming=True))
-async def komen_listener(event):
-    if not polling_active:
-        return
-    if not isinstance(event.message, Message):
-        return
-    if not event.is_channel or event.chat.username is None:
-        return
-
-    channel_id = f"@{event.chat.username}"
-    if channel_id in stopped_channels:
-        return
-
-    triggers = db.get_triggers(channel_id)
-    if not triggers:
-        return
-
-    # ambil teks pesan dan normalize
-    text = (event.raw_text or "").lower().strip()
-
-    # ===== CEK BLOCKWORD (GLOBAL) =====
-    blockwords = [b.strip().lower() for b in (db.get_blockwords() or [])]
-    if blockwords:
-        print(f"[AutoKomen] Blockwords global: {blockwords}")
-        print(f"[AutoKomen] Text: {text}")
-        for bw in blockwords:
-            if bw and bw in text:
-                print(f"[AutoKomen] Skip {channel_id} karena mengandung blockword: {bw}")
-                return
-    # ===================================
-    # ==========================
-
-    # kalau gak ada blockword, baru cek trigger
-    for komen in triggers:
-        if komen.trigger and komen.trigger.lower() in text:
-            await send_autokomen(event, komen)
+def refresh_blockwords():
+    global BLOCKWORD_CACHE, BLOCKWORD_READY
+    BLOCKWORD_CACHE = [
+        b.strip().lower()
+        for b in (db.get_blockwords() or [])
+        if str(b).strip()
+    ]
+    BLOCKWORD_READY = True
 
 
 # ===== POLLING MODE =====
@@ -97,7 +68,10 @@ async def polling_worker():
             all_channels = db.get_all_channels()
 
             # ambil blockword global dari DB (multi kata support)
-            blockwords = [b.strip().lower() for b in (db.get_blockwords() or [])]
+            if not BLOCKWORD_READY:
+                refresh_blockwords()
+
+            blockwords = BLOCKWORD_CACHE
 
             for ch in all_channels:
                 channel_username = ch[0]
@@ -450,15 +424,15 @@ async def _(event):
 
 
 # ===== BLOCKWORD COMMANDS =====
-# ===== BLOCKWORD GLOBAL COMMAND =====
 @ayiin_cmd(pattern="addblock(?: |$)(.*)")
 async def _(event):
     words = event.pattern_match.group(1)
     if not words:
-        return await event.edit("Contoh: `.addblock sfs auto viu jaseb telegram`")
+        return await event.edit("Contoh: `.addblock sfs auto`")
 
     count = db.add_blockwords_global(words)
-    await event.edit(f"{count} kata ditambahkan ke daftar blockword global.")
+    refresh_blockwords()
+    await event.edit(f"{count} kata ditambahkan.")
 
 
 @ayiin_cmd(pattern="delblock(?: |$)(.*)")
@@ -468,7 +442,8 @@ async def _(event):
         return await event.edit("Contoh: `.delblock sfs`")
 
     db.del_blockword_global(word)
-    await event.edit(f"Blockword `{word}` dihapus dari semua channel.")
+    refresh_blockwords()
+    await event.edit(f"Blockword `{word}` dihapus.")
 
 
 @ayiin_cmd(pattern="listblock$")
@@ -484,6 +459,7 @@ async def _(event):
 async def start_polling():
     await asyncio.sleep(10)
     await sync_autokomen_state()
+    refresh_blockwords()
     bot.loop.create_task(polling_worker())
 
 bot.loop.create_task(start_polling())
