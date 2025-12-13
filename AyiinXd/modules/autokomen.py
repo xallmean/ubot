@@ -105,22 +105,26 @@ async def send_autokomen(event_or_msg, komen):
     try:
         key = (event_or_msg.chat_id, event_or_msg.id)
 
-        if key in DISCUSSION_CACHE:
-            reply_msg = DISCUSSION_CACHE[key]
-        else:
+        reply_msg = DISCUSSION_CACHE.get(key)
+
+        # 🔥 VALIDASI CACHE
+        if not reply_msg or not getattr(reply_msg, "id", None):
+            DISCUSSION_CACHE.pop(key, None)
+
             discussion = await bot(
                 GetDiscussionMessageRequest(
-                    peer=event_or_msg.chat_id,  # 🔥 tetap sama
+                    peer=event_or_msg.chat_id,
                     msg_id=event_or_msg.id
                 )
             )
+
             if not discussion.messages:
-                return False
+                return False  # jangan cache apa pun
 
             reply_msg = discussion.messages[0]
             _cache_put(key, reply_msg)
 
-        target_chat = reply_msg.to_id.channel_id  # 🔥 tetap sama
+        target_chat = reply_msg.to_id.channel_id
 
         if komen.msg_id and komen.msg_chat:
             src = await bot.get_messages(
