@@ -110,7 +110,7 @@ async def polling_worker():
                         continue
 
                     msg = msgs[0]
-                    text = (msg.text or "").lower()
+                    text = (msg.raw_text or msg.text or "").lower()
 
                     # ====== CEK BLOCKWORD GLOBAL ======
                     if blockwords:
@@ -270,34 +270,54 @@ async def _(event):
 
 @ayiin_cmd(pattern="setkomen(?: |$)(.*)")
 async def _(event):
-    trigger = event.pattern_match.group(1).strip()
-    if not trigger:
-        return await event.edit("Contoh: .setkomen promo (balas ke pesan juga)")
+    raw = event.text
+    if not raw:
+        return await event.edit(
+            f"❌ Format:\n"
+            f"`{cmd}setkomen <trigger> <pesan>`"
+        )
 
-    if not event.reply_to_msg_id:
-        return await event.edit("❌ Harus reply ke pesan yang mau dijadiin komen!")
+    # contoh raw:
+    # .setkomen promo ini pesan
+    parts = raw.split(maxsplit=2)
+    if len(parts) < 3:
+        return await event.edit(
+            "❌ Format salah.\n"
+            f"Contoh:\n`{cmd}setkomen promo Ini isi komen`"
+        )
 
-    reply_msg = await event.get_reply_message()
-    if not reply_msg:
-        return await event.edit("❌ Gagal ambil pesan yang direply.")
+    trigger = parts[1].strip().lower()
 
+    # ambil SEMUA teks setelah trigger (multiline aman)
+    reply_text = raw.split(parts[0] + " " + parts[1], 1)[1].strip()
+
+    if not reply_text:
+        return await event.edit("❌ Pesan komen tidak boleh kosong.")
+
+    # ambil channel yang pakai trigger ini
     all_data = db.get_all_komen()
     channels = [d.channel_id for d in all_data if d.trigger == trigger]
 
     if not channels:
-        return await event.edit("❌ Belum ada channel untuk trigger ini. Gunakan `.setch` dulu.")
+        return await event.edit(
+            f"❌ Trigger `{trigger}` belum dipakai.\n"
+            f"Pakai `{cmd}setch {trigger} @channel` dulu."
+        )
 
     for ch in channels:
-        db.set_reply(ch, trigger, msg_id=reply_msg.id, msg_chat=str(reply_msg.chat_id))
-
-    try:
-        link_preview = f"https://t.me/c/{str(reply_msg.chat_id)[4:]}/{reply_msg.id}"
-    except Exception:
-        link_preview = "pesan"
+        db.set_reply(
+            ch,
+            trigger,
+            reply=reply_text,
+            msg_id=None,
+            msg_chat=None
+        )
 
     await event.edit(
-        f"✅ Disimpan di `{len(channels)}` channel:\n🔑 Trigger: `{trigger}`\n💬 Komen: [link]({link_preview})",
-        link_preview=False
+        f"✅ **Auto-komen disimpan**\n"
+        f"🔑 Trigger: `{trigger}`\n"
+        f"📡 Channel: `{len(channels)}`\n\n"
+        f"💬 Preview:\n{reply_text[:500]}"
     )
 
 
@@ -369,27 +389,30 @@ async def _(event):
         trigger = row.trigger
         channel = row.channel_id
         reply = row.reply or "(Belum ada pesan)"
+        if not str(channel).startswith("@"):
+            channel = "@" + str(channel)
         grouped.setdefault(trigger, []).append((channel, reply))
 
-    msg = "**📋 Daftar List Auto Komen :**\n\n"
+    msg = "**📋 Daftar Auto Komen :**\n\n"
+
     for trigger, items in grouped.items():
-        channels = set()
-        replies = set()
-        for ch, reply in items:
-            ch_clean = f"@{ch}" if not str(ch).startswith("@") else str(ch)
-            channels.add(ch_clean)
-            replies.add(reply.strip())
+        channels = sorted({ch for ch, _ in items})
 
-        channels_str = " ".join(channels)
-        replies_str = "\n".join(
-            [f'Pesan : "{(r[:400] + "...") if len(r) > 400 else r}"' for r in replies]
-        )
+        msg += f"**Trigger :** `{trigger}`\n"
+        msg += f"**Channel :** {' '.join(channels)}\n"
 
-        msg += (
-            f"**Channel :** {channels_str}\n"
-            f"**Trigger :** \"{trigger}\"\n"
-            f"{replies_str}\n\n"
-        )
+        # tampilkan setiap reply (multiline aman)
+        for idx, (_ch, reply) in enumerate(items, start=1):
+            preview = reply.strip()
+            if len(preview) > 600:
+                preview = preview[:600] + "…"
+
+            msg += (
+                f"**Pesan {idx}:**\n"
+                f"{preview}\n\n"
+            )
+
+        msg += "──────────────\n\n"
 
     await event.edit(msg)
 
