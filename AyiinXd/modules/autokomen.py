@@ -232,23 +232,68 @@ bot.loop.create_task(start())
 # =========================================================
 @ayiin_cmd(pattern="stopkomen(?: |$)(.*)")
 async def _(event):
+    """Stop auto komen (all or per channel)"""
     global polling_active
-    polling_active = False
-    db.SESSION.query(db.AutoKomen).update({"active": False})
-    db.SESSION.commit()
-    stopped_channels.clear()
-    await event.edit("🛑 AutoKomen dihentikan.")
+    target = (event.pattern_match.group(1) or "").strip()
 
+    if not target:
+        polling_active = False
+        db.SESSION.query(db.AutoKomen).update({"active": False})
+        db.SESSION.commit()
+        stopped_channels.clear()
+        await refresh_cache()
+        return await event.edit("🛑 AutoKomen dihentikan di semua channel.")
 
-@ayiin_cmd(pattern="startkomen$")
-async def _(event):
-    global polling_active
-    polling_active = True
-    db.SESSION.query(db.AutoKomen).update({"active": True})
-    db.SESSION.commit()
+    if not target.startswith("@"):
+        target = "@" + target
+
+    # matiin hanya channel target
+    try:
+        db.deactivate_channel(target)  # pastikan fungsi ini ada di sql
+    except Exception:
+        # fallback kalau belum punya function: update manual
+        db.SESSION.query(db.AutoKomen).filter_by(channel_id=target).update({"active": False})
+        db.SESSION.commit()
+
+    stopped_channels.add(target)
+
+    # polling tetap hidup kalau masih ada channel aktif lain
     await sync_state()
     await refresh_cache()
-    await event.edit("✅ AutoKomen dinyalakan.")
+    return await event.edit(f"🛑 AutoKomen dimatikan untuk {target}.")
+
+
+@ayiin_cmd(pattern="startkomen(?: |$)(.*)")
+async def _(event):
+    """Start auto komen (all or per channel)"""
+    global polling_active
+    target = (event.pattern_match.group(1) or "").strip()
+
+    if not target:
+        polling_active = True
+        db.SESSION.query(db.AutoKomen).update({"active": True})
+        db.SESSION.commit()
+        stopped_channels.clear()
+        await sync_state()
+        await refresh_cache()
+        return await event.edit("✅ AutoKomen dinyalakan untuk semua channel.")
+
+    if not target.startswith("@"):
+        target = "@" + target
+
+    try:
+        db.activate_channel(target)  # pastikan fungsi ini ada di sql
+    except Exception:
+        db.SESSION.query(db.AutoKomen).filter_by(channel_id=target).update({"active": True})
+        db.SESSION.commit()
+
+    if target in stopped_channels:
+        stopped_channels.remove(target)
+
+    polling_active = True
+    await sync_state()
+    await refresh_cache()
+    return await event.edit(f"✅ AutoKomen dinyalakan untuk {target}.")
 
 
 @ayiin_cmd(pattern="setch(?: |$)(.*)")
