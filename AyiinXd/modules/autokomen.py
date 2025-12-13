@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 from telethon.errors import FloodWaitError
 from telethon.tl.functions.messages import GetDiscussionMessageRequest
 
@@ -23,8 +22,6 @@ TRIGGER_CACHE = {}      # { "@channel": [AutoKomenRow, ...] }
 BLOCKWORD_CACHE = []    # [ "sfs", "jaseb", ... ]
 CACHE_READY = False
 CACHE_LOCK = asyncio.Lock()
-DISCUSSION_CACHE = {}   # {(chat_id, msg_id): reply_msg}
-DISCUSSION_CACHE_MAX = 2000
 
 # =========================================================
 # UTILITIES
@@ -34,16 +31,12 @@ def normalize(text: str) -> str:
 
 
 def contains_blockword(text: str) -> bool:
+    if not BLOCKWORD_CACHE:
+        return False
     for bw in BLOCKWORD_CACHE:
         if bw and bw in text:
             return True
     return False
-
-def _cache_put(key, value):
-    if len(DISCUSSION_CACHE) >= DISCUSSION_CACHE_MAX:
-        # buang item lama (FIFO sederhana)
-        DISCUSSION_CACHE.pop(next(iter(DISCUSSION_CACHE)))
-    DISCUSSION_CACHE[key] = value
 
 
 # =========================================================
@@ -76,9 +69,8 @@ async def sync_state():
 
 
 async def refresh_cache():
-    """Refresh trigger & blockword cache (SAFE)"""
+    """Refresh trigger & blockword cache"""
     global CACHE_READY
-
     async with CACHE_LOCK:
         TRIGGER_CACHE.clear()
 
@@ -90,7 +82,7 @@ async def refresh_cache():
             TRIGGER_CACHE.setdefault(ch, []).append(r)
 
         BLOCKWORD_CACHE[:] = [
-            b.lower().strip()
+            str(b).lower().strip()
             for b in (db.get_blockwords() or [])
             if str(b).strip()
         ]
@@ -99,41 +91,28 @@ async def refresh_cache():
 
 
 # =========================================================
-# SEND AUTOKOMEN (⚠️ CORE BEHAVIOR JANGAN DIUBAH)
+# SEND AUTOKOMEN (BEHAVIOR SAMA SEPERTI KODE LAMA YANG WORK)
 # =========================================================
 async def send_autokomen(event_or_msg, komen):
     try:
-        key = (event_or_msg.chat_id, event_or_msg.id)
-
-        reply_msg = DISCUSSION_CACHE.get(key)
-
-        # 🔥 VALIDASI CACHE
-        if not reply_msg or not getattr(reply_msg, "id", None):
-            DISCUSSION_CACHE.pop(key, None)
-
-            discussion = await bot(
-                GetDiscussionMessageRequest(
-                    peer=event_or_msg.chat_id,
-                    msg_id=event_or_msg.id
-                )
+        discussion = await bot(
+            GetDiscussionMessageRequest(
+                peer=event_or_msg.chat_id,  # 🔥 JANGAN DIUBAH (ini yang paling stabil)
+                msg_id=event_or_msg.id
             )
+        )
+        if not discussion.messages:
+            return False
 
-            if not discussion.messages:
-                return False  # jangan cache apa pun
+        reply_msg = discussion.messages[0]
+        target_chat = reply_msg.to_id.channel_id  # 🔥 BIARIN SEPERTI KODE LAMA
 
-            reply_msg = discussion.messages[0]
-            _cache_put(key, reply_msg)
-
-        target_chat = reply_msg.to_id.channel_id
-
-        if komen.msg_id and komen.msg_chat:
-            src = await bot.get_messages(
-                int(komen.msg_chat),
-                ids=int(komen.msg_id)
-            )
+        # ambil isi komen
+        if getattr(komen, "msg_id", None) and getattr(komen, "msg_chat", None):
+            src = await bot.get_messages(int(komen.msg_chat), ids=int(komen.msg_id))
             text = src.text or "💬 (Kosong)"
         else:
-            text = komen.reply
+            text = getattr(komen, "reply", None)
 
         if not text:
             return False
@@ -154,7 +133,7 @@ async def send_autokomen(event_or_msg, komen):
 
 
 # =========================================================
-# POLLING WORKER (BERSIH, CACHE, STABLE)
+# POLLING WORKER (FIX: BACA raw_text/caption JUGA)
 # =========================================================
 async def polling_worker():
     global polling_active
@@ -178,37 +157,55 @@ async def polling_worker():
                         continue
 
                     msg = msgs[0]
-                    text = normalize(msg.text)
+
+                    # 🔥 FIX UTAMA: jangan cuma msg.text
+                    text = normalize(getattr(msg, "raw_text", None) or getattr(msg, "message", None) or getattr(msg, "text", None))
                     if not text:
                         continue
 
                     if contains_blockword(text):
                         continue
 
+                    if not triggers:
+                        continue
+
                     for komen in triggers:
-                        if komen.last_msg_id == msg.id:
+                        # anti spam (pakai cache object juga)
+                        if getattr(komen, "last_msg_id", None) == msg.id:
                             continue
 
-                        if normalize(komen.trigger) in text:
+                        trig = normalize(getattr(komen, "trigger", None))
+                        if trig and trig in text:
                             ok = await send_autokomen(msg, komen)
 
                             if ok:
-                                db.update_last_msg(
-                                    channel_id,
-                                    komen.trigger,
-                                    msg.id
-                                )
+                                # update DB
+                                try:
+                                    db.update_last_msg(channel_id, komen.trigger, msg.id)
+                                except Exception:
+                                    pass
 
+                                # update cache object biar loop berikutnya gak ulang
+                                try:
+                                    komen.last_msg_id = msg.id
+                                except Exception:
+                                    pass
+
+                                # botlog optional
                                 if BOTLOG_CHATID:
-                                    await bot.send_message(
-                                        BOTLOG_CHATID,
-                                        f"📢 AutoKomen\n"
-                                        f"Channel: {channel_id}\n"
-                                        f"Trigger: {komen.trigger}\n"
-                                        f"Msg ID: {msg.id}"
-                                    )
+                                    try:
+                                        await bot.send_message(
+                                            BOTLOG_CHATID,
+                                            f"📢 AutoKomen\nChannel: {channel_id}\nTrigger: {komen.trigger}\nMsg ID: {msg.id}",
+                                            link_preview=False
+                                        )
+                                    except Exception:
+                                        pass
+
                             break
 
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds)
                 except Exception:
                     continue
 
@@ -222,7 +219,6 @@ async def polling_worker():
 # STARTUP
 # =========================================================
 async def start():
-    DISCUSSION_CACHE.clear()
     await asyncio.sleep(5)
     await sync_state()
     await refresh_cache()
@@ -232,7 +228,7 @@ bot.loop.create_task(start())
 
 
 # =========================================================
-# COMMANDS (PERILAKU SAMA, CUMA REFRESH CACHE)
+# COMMANDS
 # =========================================================
 @ayiin_cmd(pattern="stopkomen(?: |$)(.*)")
 async def _(event):
@@ -251,17 +247,13 @@ async def _(event):
     if not target.startswith("@"):
         target = "@" + target
 
-    # matiin hanya channel target
     try:
-        db.deactivate_channel(target)  # pastikan fungsi ini ada di sql
+        db.deactivate_channel(target)
     except Exception:
-        # fallback kalau belum punya function: update manual
         db.SESSION.query(db.AutoKomen).filter_by(channel_id=target).update({"active": False})
         db.SESSION.commit()
 
     stopped_channels.add(target)
-
-    # polling tetap hidup kalau masih ada channel aktif lain
     await sync_state()
     await refresh_cache()
     return await event.edit(f"🛑 AutoKomen dimatikan untuk {target}.")
@@ -286,7 +278,7 @@ async def _(event):
         target = "@" + target
 
     try:
-        db.activate_channel(target)  # pastikan fungsi ini ada di sql
+        db.activate_channel(target)
     except Exception:
         db.SESSION.query(db.AutoKomen).filter_by(channel_id=target).update({"active": True})
         db.SESSION.commit()
@@ -302,9 +294,12 @@ async def _(event):
 
 @ayiin_cmd(pattern="setch(?: |$)(.*)")
 async def _(event):
-    args = event.pattern_match.group(1).split()
-    trigger = args[0]
-    channels = args[1:]
+    parts = (event.pattern_match.group(1) or "").split()
+    if len(parts) < 2:
+        return await event.edit("Contoh: .setch <trigger> <@channel1 @channel2>")
+
+    trigger = parts[0]
+    channels = parts[1:]
 
     for ch in channels:
         if not ch.startswith("@"):
@@ -317,18 +312,21 @@ async def _(event):
 
 @ayiin_cmd(pattern="setkomen(?: |$)(.*)")
 async def _(event):
-    trigger = event.pattern_match.group(1).strip()
+    trigger = (event.pattern_match.group(1) or "").strip()
+    if not trigger:
+        return await event.edit("Contoh: .setkomen promo (reply ke pesan)")
+
+    if not event.reply_to_msg_id:
+        return await event.edit("❌ Harus reply ke pesan yang mau dijadiin komen!")
+
     reply_msg = await event.get_reply_message()
+    if not reply_msg:
+        return await event.edit("❌ Gagal ambil pesan reply.")
 
     rows = db.get_all_komen()
     for r in rows:
         if r.trigger == trigger:
-            db.set_reply(
-                r.channel_id,
-                trigger,
-                msg_id=reply_msg.id,
-                msg_chat=str(reply_msg.chat_id)
-            )
+            db.set_reply(r.channel_id, trigger, msg_id=reply_msg.id, msg_chat=str(reply_msg.chat_id))
 
     await refresh_cache()
     await event.edit("✅ Komen disimpan.")
@@ -336,10 +334,12 @@ async def _(event):
 
 @ayiin_cmd(pattern="delkomen(?: |$)(.*)")
 async def _(event):
-    args = event.pattern_match.group(1).split()
+    args = (event.pattern_match.group(1) or "").split()
+    if len(args) < 2:
+        return await event.edit("Contoh: .delkomen <trigger> <@channel1 @channel2>")
+
     trig = args[0]
     channels = args[1:]
-
     for ch in channels:
         if not ch.startswith("@"):
             ch = "@" + ch
@@ -351,7 +351,10 @@ async def _(event):
 
 @ayiin_cmd(pattern="delch(?: |$)(.*)")
 async def _(event):
-    channels = event.pattern_match.group(1).split()
+    channels = (event.pattern_match.group(1) or "").split()
+    if not channels:
+        return await event.edit("Contoh: .delch <@channel1 @channel2>")
+
     for ch in channels:
         if not ch.startswith("@"):
             ch = "@" + ch
@@ -363,23 +366,29 @@ async def _(event):
 
 @ayiin_cmd(pattern="addblock(?: |$)(.*)")
 async def _(event):
-    db.add_blockwords_global(event.pattern_match.group(1))
+    words = (event.pattern_match.group(1) or "").strip()
+    if not words:
+        return await event.edit("Contoh: .addblock sfs auto viu")
+
+    db.add_blockwords_global(words)
     await refresh_cache()
     await event.edit("✅ Blockword ditambahkan.")
 
 
 @ayiin_cmd(pattern="delblock(?: |$)(.*)")
 async def _(event):
-    db.del_blockword_global(event.pattern_match.group(1))
+    word = (event.pattern_match.group(1) or "").strip()
+    if not word:
+        return await event.edit("Contoh: .delblock sfs")
+
+    db.del_blockword_global(word)
     await refresh_cache()
     await event.edit("🗑️ Blockword dihapus.")
 
 
 @ayiin_cmd(pattern="listblock$")
 async def _(event):
-    await event.edit(
-        "🚫 Blockword:\n" + "\n".join(BLOCKWORD_CACHE)
-    )
+    await event.edit("🚫 Blockword:\n" + "\n".join(BLOCKWORD_CACHE) if BLOCKWORD_CACHE else "🚫 Belum ada blockword.")
 
 
 # =========================================================
