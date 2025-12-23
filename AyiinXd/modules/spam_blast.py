@@ -14,6 +14,7 @@ from AyiinXd import bot
 from telethon import events
 import re
 import asyncio
+import random
 
 @ayiin_cmd(pattern=r"setgrup (\S+)\s+([\s\S]+)")
 async def setgrup(event):
@@ -156,6 +157,13 @@ async def onfwloop(event):
                     try:
                         await event.client.forward_messages(g, msg)
                         berhasil.append(g)
+                        
+                    batch_size = 5
+                    for i in range(0, len(grups), batch_size):
+                        batch = grups[i:i+batch_size]
+                       for g in batch:
+                           await bot.forward_messages(g, msg)
+                       await asyncio.sleep(delay + random.randint(0, 5))
 
                     except FloodWaitError as e:
                         print(f"[onfw floodwait] skip grup {g}, tunggu {e.seconds} detik")
