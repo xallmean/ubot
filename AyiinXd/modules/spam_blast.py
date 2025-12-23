@@ -44,7 +44,9 @@ async def setgrup(event):
     spam_sql.add_groups_to_list(nama, grups)  # Tambahkan grup ke spam_group
 
     await event.edit(f"✓ Berhasil menambahkan `{len(grups)}` grup ke list `{nama}`.")
+    
 active_spams = {}
+
 
 @ayiin_cmd(pattern=r"onspam (\d+)\s+(\S+)\s+([\s\S]+)")
 async def onspamloop(event):
@@ -68,59 +70,40 @@ async def onspamloop(event):
         try:
             while True:
                 grups = spam_sql.get_groups(nama)
+                if not grups:
+                    await asyncio.sleep(30)
+                    continue
+
                 berhasil, gagal = [], []
-
-                for g in grups:
-                    try:
-                        if media:
-                            await event.client.send_file(
-                                g, media, caption=teks or ""
-                            )
-                        else:
-                            await event.client.send_message(g, teks)
-                        berhasil.append(g)
-                        
-                    batch_size = 5
-                    for i in range(0, len(grups), batch_size):
-                        batch = grups[i:i+batch_size]
-                        for g in batch:
-                            await bot.forward_messages(g, msg)
-                        await asyncio.sleep(delay + random.randint(0, 5))
-
-                    except FloodWaitError as e:
-                        print(f"[onspam floodwait] skip grup {g}, tunggu {e.seconds} detik")
-                        await asyncio.sleep(min(e.seconds, 10))  # tunggu max 10 detik, lanjut grup lain
-                        gagal.append((g, f"onspam floodWait {e.seconds}s"))
+                batch_size = 5
+                for i in range(0, len(grups), batch_size):
+                    batch = grups[i:i+batch_size]
+                    for g in batch:
                         try:
                             if media:
-                                await event.client.send_file(
-                                    g, media, caption=teks or ""
-                                )
+                                await event.client.send_file(g, media, caption=teks or "")
                             else:
                                 await event.client.send_message(g, teks)
                             berhasil.append(g)
-                        except Exception as e2:
-                            gagal.append((g, str(e2)))
+                        except FloodWaitError as e:
+                            print(f"[onspam floodwait] skip grup {g}, tunggu {e.seconds}s")
+                            await asyncio.sleep(min(e.seconds, 10))
+                            gagal.append((g, f"FloodWait {e.seconds}s"))
+                        except Exception as e:
+                            gagal.append((g, str(e)))
+                    await asyncio.sleep(delay + random.randint(0, 5))
 
-                    except Exception as e:
-                        gagal.append((g, str(e)))
-
+                # log ke botlog
                 log = f"⎈ **AUTO BASIC `{nama}`**\n\n"
                 if berhasil:
-                    log += "✓ **Berhasil:**\n" + "\n".join(
-                        f"• `{x}`" for x in berhasil
-                    )
+                    log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
-                        f"• `{x}` karena `{e}`" for x, e in gagal
-                    )
+                    log += "\n\n✘ **Gagal:**\n" + "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
                 except Exception as logerr:
                     print(f"[SPAM LOG ERROR] {logerr}")
-
-                await asyncio.sleep(delay)
 
         except asyncio.CancelledError:
             print(f"[SPAM] Loop `{nama}` dihentikan.")
@@ -160,55 +143,42 @@ async def onfwloop(event):
         try:
             while True:
                 grups = spam_sql.get_groups(nama)
+                if not grups:
+                    await asyncio.sleep(30)
+                    continue
+
                 berhasil, gagal = [], []
-
-                for g in grups:
-                    try:
-                        await event.client.forward_messages(g, msg)
-                        berhasil.append(g)
-                        
-                    batch_size = 5
-                    for i in range(0, len(grups), batch_size):
-                        batch = grups[i:i+batch_size]
-                        for g in batch:
-                            await bot.forward_messages(g, msg)
-                        await asyncio.sleep(delay + random.randint(0, 5))
-
-                    except FloodWaitError as e:
-                        print(f"[onfw floodwait] skip grup {g}, tunggu {e.seconds} detik")
-                        await asyncio.sleep(min(e.seconds, 10))  # tunggu max 10 detik, lanjut grup lain
-                        gagal.append((g, f"onfw floodWait {e.seconds}s"))
+                batch_size = 5
+                for i in range(0, len(grups), batch_size):
+                    batch = grups[i:i+batch_size]
+                    for g in batch:
                         try:
                             await event.client.forward_messages(g, msg)
                             berhasil.append(g)
-                        except Exception as e2:
-                            gagal.append((g, str(e2)))
+                        except FloodWaitError as e:
+                            print(f"[onfw floodwait] skip grup {g}, tunggu {e.seconds}s")
+                            await asyncio.sleep(min(e.seconds, 10))
+                            gagal.append((g, f"FloodWait {e.seconds}s"))
+                        except Exception as e:
+                            gagal.append((g, str(e)))
+                    await asyncio.sleep(delay + random.randint(0, 5))
 
-                    except Exception as e:
-                        gagal.append((g, str(e)))
-
+                # log ke botlog
                 log = f"⎈ **FORWARD `{nama}`**\n\n"
                 if berhasil:
-                    log += "✓ **Berhasil:**\n" + "\n".join(
-                        f"• `{x}`" for x in berhasil
-                    )
+                    log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
                 if gagal:
-                    log += "\n\n✘ **Gagal:**\n" + "\n".join(
-                        f"• `{x}` karena `{e}`" for x, e in gagal
-                    )
+                    log += "\n\n✘ **Gagal:**\n" + "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
 
                 try:
                     await event.client.send_message(BOTLOG_CHATID, log)
                 except Exception as logerr:
                     print(f"[FW LOG ERROR] {logerr}")
 
-                await asyncio.sleep(delay)
-
         except asyncio.CancelledError:
             print(f"[FW] Loop `{nama}` dihentikan.")
 
     active_spams[nama] = asyncio.create_task(forward_loop())
-
 
 @ayiin_cmd(pattern=r"stopspam (.+)")
 async def stopspam(event):
@@ -294,8 +264,6 @@ async def show_all_spam_lists(event):
         
     await event.edit(teks)
 
-import asyncio
-
 async def auto_resume_spam_startup():
     await asyncio.sleep(10)  # tunggu koneksi siap
     lists = spam_sql.get_all_lists()
@@ -304,7 +272,6 @@ async def auto_resume_spam_startup():
     for l in lists:
         if not l.is_active:
             continue
-
         if l.name in active_spams:
             continue
 
@@ -325,33 +292,26 @@ async def auto_resume_spam_startup():
                         continue
 
                     berhasil, gagal = [], []
-
-                    for g in grups:
-                        try:
-                            await bot.send_message(g, data.content)
-                            berhasil.append(g)
-
-                        except FloodWaitError as e:
-                            await asyncio.sleep(e.seconds)
+                    batch_size = 5
+                    for i in range(0, len(grups), batch_size):
+                        batch = grups[i:i+batch_size]
+                        for g in batch:
                             try:
                                 await bot.send_message(g, data.content)
                                 berhasil.append(g)
-                            except Exception as e2:
-                                gagal.append((g, str(e2)))
-
-                        except Exception as e:
-                            gagal.append((g, str(e)))
-
-                        await asyncio.sleep(1)  # anti flood antar grup
+                            except FloodWaitError as e:
+                                await asyncio.sleep(min(e.seconds, 10))
+                                gagal.append((g, f"FloodWait {e.seconds}s"))
+                            except Exception as e:
+                                gagal.append((g, str(e)))
+                        await asyncio.sleep(data.delay + random.randint(0,5))
 
                     # 🔔 NOTIFIKASI LOOP KE BOTLOG
                     log = f"⎈ **AUTO BASIC `{nama}`**\n\n"
                     if berhasil:
                         log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
                     if gagal:
-                        log += "\n\n✘ **Gagal:**\n" + \
-                               "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
-
+                        log += "\n\n✘ **Gagal:**\n" + "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
                     if len(log) > 3900:
                         log = log[:3900] + "\n...(dipotong)"
 
@@ -395,33 +355,26 @@ async def auto_resume_spam_startup():
                             continue
 
                         berhasil, gagal = [], []
-
-                        for g in grups:
-                            try:
-                                await bot.forward_messages(g, msg)
-                                berhasil.append(g)
-
-                            except FloodWaitError as e:
-                                await asyncio.sleep(e.seconds)
+                        batch_size = 5
+                        for i in range(0, len(grups), batch_size):
+                            batch = grups[i:i+batch_size]
+                            for g in batch:
                                 try:
                                     await bot.forward_messages(g, msg)
                                     berhasil.append(g)
-                                except Exception as e2:
-                                    gagal.append((g, str(e2)))
-
-                            except Exception as e:
-                                gagal.append((g, str(e)))
-
-                            await asyncio.sleep(1)
+                                except FloodWaitError as e:
+                                    await asyncio.sleep(min(e.seconds, 10))
+                                    gagal.append((g, f"FloodWait {e.seconds}s"))
+                                except Exception as e:
+                                    gagal.append((g, str(e)))
+                            await asyncio.sleep(data.delay + random.randint(0,5))
 
                         # 🔔 NOTIFIKASI LOOP KE BOTLOG
                         log = f"⎈ **AUTO FORWARD `{nama}`**\n\n"
                         if berhasil:
                             log += "✓ **Berhasil:**\n" + "\n".join(f"• `{x}`" for x in berhasil)
                         if gagal:
-                            log += "\n\n✘ **Gagal:**\n" + \
-                                   "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
-
+                            log += "\n\n✘ **Gagal:**\n" + "\n".join(f"• `{x}` karena `{e}`" for x, e in gagal)
                         if len(log) > 3900:
                             log = log[:3900] + "\n...(dipotong)"
 
@@ -432,9 +385,7 @@ async def auto_resume_spam_startup():
 
                         await asyncio.sleep(data.delay)
 
-                active_spams[l.name] = asyncio.create_task(
-                    loop_resume_forward(l.name, msg)
-                )
+                active_spams[l.name] = asyncio.create_task(loop_resume_forward(l.name, msg))
                 resumed.append(l.name)
 
             except Exception as e:
