@@ -158,7 +158,9 @@ async def onfwloop(event):
                         berhasil.append(g)
 
                     except FloodWaitError as e:
-                        await asyncio.sleep(e.seconds)
+                        print(f"[onfw floodwait] skip grup {g}, tunggu {e.seconds} detik")
+                        await asyncio.sleep(min(e.seconds, 10))  # tunggu max 10 detik, lanjut grup lain
+                        gagal.append((g, f"onfw floodWait {e.seconds}s"))
                         try:
                             await event.client.forward_messages(g, msg)
                             berhasil.append(g)
