@@ -79,9 +79,18 @@ async def onspamloop(event):
                         else:
                             await event.client.send_message(g, teks)
                         berhasil.append(g)
+                        
+                    batch_size = 5
+                    for i in range(0, len(grups), batch_size):
+                        batch = grups[i:i+batch_size]
+                        for g in batch:
+                            await bot.forward_messages(g, msg)
+                        await asyncio.sleep(delay + random.randint(0, 5))
 
                     except FloodWaitError as e:
-                        await asyncio.sleep(e.seconds)
+                        print(f"[onspam floodwait] skip grup {g}, tunggu {e.seconds} detik")
+                        await asyncio.sleep(min(e.seconds, 10))  # tunggu max 10 detik, lanjut grup lain
+                        gagal.append((g, f"onspam floodWait {e.seconds}s"))
                         try:
                             if media:
                                 await event.client.send_file(
@@ -161,9 +170,9 @@ async def onfwloop(event):
                     batch_size = 5
                     for i in range(0, len(grups), batch_size):
                         batch = grups[i:i+batch_size]
-                       for g in batch:
-                           await bot.forward_messages(g, msg)
-                       await asyncio.sleep(delay + random.randint(0, 5))
+                        for g in batch:
+                            await bot.forward_messages(g, msg)
+                        await asyncio.sleep(delay + random.randint(0, 5))
 
                     except FloodWaitError as e:
                         print(f"[onfw floodwait] skip grup {g}, tunggu {e.seconds} detik")
