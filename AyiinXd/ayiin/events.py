@@ -93,8 +93,8 @@ async def ajg():
         await bot(Get("jasebxall"))
         await bot(Get("ixallsupport"))
         await bot(Get("proofxall"))
-        await bot(Get("cumaixall"))
-        await bot(Get("lpm_jualanc"))
+        await bot(Get("markeetele"))
+        await bot(Get("LPMIXALL"))
     except rpcerrorlist.ChannelPrivateError:
         print("error, need unbanned!")
         sys.exit(1)
@@ -104,8 +104,8 @@ async def checking(client):
     gocheck = str(pybase64.b64decode("QGphc2VieGFsbA=="))[2:13]
     checker = str(pybase64.b64decode("QGl4YWxsc3VwcG9ydA="))[2:17]
     checkxd = str(pybase64.b64decode("QHByb29meGFsbA=="))[2:13]
-    checksbt = str(pybase64.b64decode("QGN1bWFpeGFsbA=="))[2:14]
-    ceklpm = str(pybase64.b64decode("QGxwbV9qdWFsYW5j"))[2:14]
+    checksbt = str(pybase64.b64decode("QG1hcmtlZXRlbGU="))[2:14]
+    ceklpm = str(pybase64.b64decode("QExQTUlYQUxM"))[2:14]
     if client:
         try:
             await client(Get(gocheck))
