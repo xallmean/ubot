@@ -106,7 +106,7 @@ async def send_durasi_startup():
 async def kirim_durasi(chat_id):
     try:
         conn = await asyncpg.connect(DB_URI)
-        row = await conn.fetchrow("SELECT start_time, jenis FROM bot_info WHERE id=1")
+        row = await conn.fetchrow("SELECT start_time, jenis, notif_habis FROM bot_info WHERE id=1")
         now = int(time.time())
 
         if not row:
@@ -114,14 +114,21 @@ async def kirim_durasi(chat_id):
             await conn.close()
             return
 
-        teks = await buat_teks_durasi(row['jenis'], row['start_time'], now)
-        await bot.send_message(chat_id, teks)
-        print(f"[LOG] Pesan durasi terkirim ke chat {chat_id}.")
+        total_durasi = konversi_ke_detik(row['jenis'])
+        sisa = total_durasi - (now - row['start_time'])
+
+        if sisa <= 0 and not row.get('notif_habis', False):
+            await bot.send_message(chat_id, "**Durasi kamu sudah habis. Silakan hubungi @jPipis untuk perpanjangan userbot.**")
+            await conn.execute("UPDATE bot_info SET notif_habis = TRUE WHERE id=1")
+        elif sisa > 0:
+            teks = await buat_teks_durasi(row['jenis'], row['start_time'], now)
+            await bot.send_message(chat_id, teks)
+
         await conn.close()
     except Exception as e:
         print(f"[ERROR] Gagal kirim durasi: {e}")
         await bot.send_message(chat_id, f"**Gagal kirim durasi:** `{e}`")
-
+        
 # Jalankan task startup
 import asyncio
 bot.loop.create_task(send_durasi_startup())
