@@ -5,10 +5,10 @@ from telethon import events
 from AyiinXd import CMD_HANDLER as cmd
 from AyiinXd import CMD_HELP, DB_URI, bot
 from AyiinXd.ayiin import ayiin_cmd
+import asyncio
 
 GROUP_ID_TUJUAN = -1002412201139  # ganti dengan grup log kamu
 
-# Fungsi konversi durasi ke detik
 def konversi_ke_detik(durasi: str) -> int:
     if durasi == "lifetime":
         return -1
@@ -32,12 +32,17 @@ def konversi_ke_detik(durasi: str) -> int:
 async def _(event):
     try:
         conn = await asyncpg.connect(DB_URI)
+        # bikin tabel & kolom notif_habis kalau belom ada
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS bot_info (
                 id INTEGER PRIMARY KEY,
                 start_time BIGINT,
                 jenis TEXT
             );
+        """)
+        await conn.execute("""
+            ALTER TABLE bot_info
+            ADD COLUMN IF NOT EXISTS notif_habis BOOLEAN DEFAULT FALSE;
         """)
 
         row = await conn.fetchrow("SELECT start_time, jenis FROM bot_info WHERE id=1")
@@ -48,10 +53,7 @@ async def _(event):
             await conn.close()
             return
 
-        jenis = row['jenis']
-        start_time = row['start_time']
-        teks = await buat_teks_durasi(jenis, start_time, now)
-
+        teks = await buat_teks_durasi(row['jenis'], row['start_time'], now)
         await event.edit(teks)
         await conn.close()
     except Exception as e:
@@ -95,7 +97,6 @@ async def handler_auto_join(event):
 
 # ==================== AUTO KIRIM DURASI SAAT STARTUP ====================
 async def send_durasi_startup():
-    # tunggu bot connect dulu
     while not bot.is_connected():
         print("[LOG] Menunggu bot connect...")
         await asyncio.sleep(1)
@@ -106,6 +107,11 @@ async def send_durasi_startup():
 async def kirim_durasi(chat_id):
     try:
         conn = await asyncpg.connect(DB_URI)
+        await conn.execute("""
+            ALTER TABLE bot_info
+            ADD COLUMN IF NOT EXISTS notif_habis BOOLEAN DEFAULT FALSE;
+        """)
+
         row = await conn.fetchrow("SELECT start_time, jenis, notif_habis FROM bot_info WHERE id=1")
         now = int(time.time())
 
@@ -128,9 +134,8 @@ async def kirim_durasi(chat_id):
     except Exception as e:
         print(f"[ERROR] Gagal kirim durasi: {e}")
         await bot.send_message(chat_id, f"**Gagal kirim durasi:** `{e}`")
-        
+
 # Jalankan task startup
-import asyncio
 bot.loop.create_task(send_durasi_startup())
 
 # ==================== HELP ====================
