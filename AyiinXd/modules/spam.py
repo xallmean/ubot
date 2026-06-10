@@ -216,6 +216,7 @@ async def tmeme(event):
 
 
 
+
 SPAM_STATUS={}
 
 @ayiin_cmd(pattern="(delayspam|dspam|dlspam|spamd) ([\\s\\S]*)")
@@ -229,12 +230,18 @@ async def dlyspam(event):
     try:
         sleeptimet=sleeptimem=float(input_str[0])
     except Exception:
-        return await eod(event,get_string("dspam_1").format(event.pattern_match.group(1)))
+        return await eod(
+            event,
+            get_string("dspam_1").format(event.pattern_match.group(1))
+        )
 
     try:
         count=int(input_str[1])
     except Exception:
-        return await eod(event,get_string("dspam_1").format(event.pattern_match.group(1)))
+        return await eod(
+            event,
+            get_string("dspam_1").format(event.pattern_match.group(1))
+        )
 
     text=input_str[2] if len(input_str)>2 else None
 
@@ -249,28 +256,27 @@ async def dlyspam(event):
                 break
 
             try:
-                reply_to=reply.reply_to_msg_id if reply and getattr(reply,"reply_to_msg_id",None) else None
-
                 if reply:
                     if reply.media:
                         await event.client.send_file(
                             chat_id,
-                            file=reply.media,
-                            caption=reply.text or text or "",
-                            force_document=False,
-                            reply_to=reply_to
+                            file=reply,
+                            caption=text or reply.text or "",
+                            formatting_entities=reply.entities,
+                            parse_mode="html"
                         )
                     else:
                         await event.client.send_message(
                             chat_id,
-                            message=reply.text or text or "",
-                            reply_to=reply_to
+                            message=text or reply.text or "",
+                            formatting_entities=reply.entities,
+                            parse_mode="html"
                         )
-
                 elif text:
                     await event.client.send_message(
                         chat_id,
-                        message=text
+                        message=text,
+                        parse_mode="html"
                     )
 
             except Exception as e:
@@ -295,7 +301,7 @@ async def dlyspam(event):
         except Exception:
             name="Tidak diketahui"
 
-        msg=text or (reply.text if reply else "Media")
+        msg=text or (reply.text if reply and reply.text else "Media")
 
         if event.is_private:
             await event.client.send_message(
