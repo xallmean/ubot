@@ -245,25 +245,27 @@ async def dlyspam(event):
     await event.delete()
     SPAM_STATUS[event.chat_id] = True
 
-    async def delay_spam_function(event, reply, count, text, sleeptimem, sleeptimet, chat_id=None):
-        from asyncio import sleep
+async def delay_spam_function(event,reply,count,text,sleeptimem,sleeptimet,chat_id=None):
+    from asyncio import sleep
+    reply_to=None
+    try:
+        if reply and getattr(reply,"reply_to",None):
+            reply_to=reply.reply_to.reply_to_msg_id
+    except: pass
 
-        for _ in range(count):
-            if SPAM_STATUS.get(chat_id) is False:
-                break
+    for _ in range(count):
+        if SPAM_STATUS.get(chat_id) is False: break
 
-            if reply and reply.media:
-                if reply.text:
-                    # Kalau media ada caption, spam media + caption sebanyak count
-                    await event.client.send_file(chat_id, reply.media, caption=reply.text)
-                else:
-                    # Kalau media tanpa caption, spam media + teks (kalau ada)
-                    await event.client.send_file(chat_id, reply.media, caption=text or "")
+        if reply and reply.media:
+            if reply.text:
+                await event.client.send_file(chat_id,reply.media,caption=reply.text,reply_to=reply_to)
             else:
-                if text:
-                    await event.client.send_message(chat_id, text)
+                await event.client.send_file(chat_id,reply.media,caption=text or "",reply_to=reply_to)
+        else:
+            if text:
+                await event.client.send_message(chat_id,text,reply_to=reply_to)
 
-            await sleep(sleeptimet)
+        await sleep(sleeptimet)
 
     await delay_spam_function(event, reply, count, text, sleeptimem, sleeptimet, chat_id=event.chat_id)
     
