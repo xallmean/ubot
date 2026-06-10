@@ -215,92 +215,109 @@ async def tmeme(event):
             )
 
 
-SPAM_STATUS = {}
+
+SPAM_STATUS={}
 
 @ayiin_cmd(pattern="(delayspam|dspam|dlspam|spamd) ([\\s\\S]*)")
 async def dlyspam(event):
     if event.chat_id in BLACKLIST_CHAT:
         return await event.edit(get_string("ayiin_1"))
 
-    reply = await event.get_reply_message()
-    input_str = "".join(event.text.split(maxsplit=1)[1:]).split(" ", 2)
+    reply=await event.get_reply_message()
+    input_str="".join(event.text.split(maxsplit=1)[1:]).split(" ",2)
 
     try:
-        sleeptimet = sleeptimem = float(input_str[0])
+        sleeptimet=sleeptimem=float(input_str[0])
     except Exception:
-        return await eod(
-            event, get_string("dspam_1").format(event.pattern_match.group(1))
-        )
+        return await eod(event,get_string("dspam_1").format(event.pattern_match.group(1)))
 
     try:
-        count = int(input_str[1])
+        count=int(input_str[1])
     except Exception:
-        return await eod(
-            event, get_string("dspam_1").format(event.pattern_match.group(1))
-        )
+        return await eod(event,get_string("dspam_1").format(event.pattern_match.group(1)))
 
-    # Ambil teks tambahan kalau ada
-    text = input_str[2] if len(input_str) > 2 else None
+    text=input_str[2] if len(input_str)>2 else None
 
     await event.delete()
-    SPAM_STATUS[event.chat_id] = True
+    SPAM_STATUS[event.chat_id]=True
 
-async def delay_spam_function(event,reply,count,text,sleeptimem,sleeptimet,chat_id=None):
-    from asyncio import sleep
+    async def delay_spam_function(event,reply,count,text,sleeptimem,sleeptimet,chat_id=None):
+        from asyncio import sleep
 
-    for _ in range(count):
-        if SPAM_STATUS.get(chat_id) is False:
-            break
+        for _ in range(count):
+            if SPAM_STATUS.get(chat_id) is False:
+                break
 
-        if reply:
-            if reply.media:
-                await event.client.send_file(
-                    chat_id,
-                    reply.media,
-                    caption=reply.text or text or "",
-                    reply_to=reply.reply_to_msg_id
-                )
-            else:
-                await event.client.send_message(
-                    chat_id,
-                    reply.text or text or "",
-                    reply_to=reply.reply_to_msg_id
-                )
-        elif text:
-            await event.client.send_message(chat_id,text)
+            try:
+                reply_to=reply.reply_to_msg_id if reply and getattr(reply,"reply_to_msg_id",None) else None
 
-        await sleep(sleeptimet)
+                if reply:
+                    if reply.media:
+                        await event.client.send_file(
+                            chat_id,
+                            file=reply.media,
+                            caption=reply.text or text or "",
+                            force_document=False,
+                            reply_to=reply_to
+                        )
+                    else:
+                        await event.client.send_message(
+                            chat_id,
+                            message=reply.text or text or "",
+                            reply_to=reply_to
+                        )
 
-    await delay_spam_function(event, reply, count, text, sleeptimem, sleeptimet, chat_id=event.chat_id)
-    
+                elif text:
+                    await event.client.send_message(
+                        chat_id,
+                        message=text
+                    )
+
+            except Exception as e:
+                LOGS.info(f"DSPAM ERROR: {e}")
+
+            await sleep(sleeptimet)
+
+    await delay_spam_function(
+        event,
+        reply,
+        count,
+        text,
+        sleeptimem,
+        sleeptimet,
+        chat_id=event.chat_id
+    )
+
     if BOTLOG_CHATID:
         try:
-            chat = await event.get_chat()
-            name = get_display_name(chat)
+            chat=await event.get_chat()
+            name=get_display_name(chat)
         except Exception:
-            name = "Tidak diketahui"
+            name="Tidak diketahui"
 
-    if event.is_private:
-        await event.client.send_message(
-            BOTLOG_CHATID,
-            get_string("spam_7").format(
-                event.chat_id,   # user_id
-                sleeptimet,           # delay detik
-                count,          # jumlah pesan
-                text or (reply.text if reply else "")  # isi pesan
+        msg=text or (reply.text if reply else "Media")
+
+        if event.is_private:
+            await event.client.send_message(
+                BOTLOG_CHATID,
+                get_string("spam_7").format(
+                    event.chat_id,
+                    sleeptimet,
+                    count,
+                    msg
+                )
             )
-        )
-    else:
-        await event.client.send_message(
-            BOTLOG_CHATID,
-            get_string("spam_8").format(
-                name,            # nama chat
-                event.chat_id,   # chat_id
-                sleeptimet,           # delay detik
-                count,          # jumlah pesan
-                text or (reply.text if reply else "")  # isi pesan
+        else:
+            await event.client.send_message(
+                BOTLOG_CHATID,
+                get_string("spam_8").format(
+                    name,
+                    event.chat_id,
+                    sleeptimet,
+                    count,
+                    msg
+                )
             )
-        )
             
 
 @ayiin_cmd(pattern="stopdspam(?:\\s+([\\s\\S]+))?")
