@@ -1,5 +1,3 @@
-# repack by blue. #
-
 import asyncio
 import importlib
 import logging
@@ -40,52 +38,62 @@ else:
 
 async def autopilot():
     LOGS.info("SEDANG MEMBUAT GROUP LOG USERBOT UNTUK ANDA")
+
     if BOTLOG_CHATID and str(BOTLOG_CHATID).startswith("-100"):
-        return
-    y = []  # To Refresh private ids
-    async for x in bot.iter_dialogs():
-        y.append(x.id)
-    if BOTLOG_CHATID:
         try:
-            await bot.get_entity(int("BOTLOG_CHATID"))
+            await bot.get_entity(int(BOTLOG_CHATID))
             return
-        except BaseException:
-            del heroku_var["BOTLOG_CHATID"]
+        except Exception as e:
+            LOGS.exception(f"BOTLOG_CHATID tidak valid: {e}")
+            if heroku_var:
+                heroku_var.pop("BOTLOG_CHATID", None)
+
     try:
         r = await bot(
             CreateChannelRequest(
                 title="logs. -𝗜𝗫𝗔𝗟𝗟",
                 about="bot dan group yang sudah dibuat tolong untuk tidak menghapusnya.",
                 megagroup=True,
-            ),
+            )
         )
+
     except ChannelsTooMuchError:
         LOGS.info(
             "Channel dan Group Lu Banyak Tod, Hapus Salah Satu Dan Restart Lagi"
         )
-        exit(1)
-    except BaseException:
-        LOGS.info(
-            "Terjadi kesalahan, Buat sebuah grup lalu isi id nya di config var BOTLOG_CHATID."
-        )
-        exit(1)
+        return
+
+    except Exception as e:
+        LOGS.exception(f"Gagal membuat grup log: {e}")
+        return
+
     chat = r.chats[0]
     channel = get_peer_id(chat)
+
     if isinstance(chat.photo, ChatPhotoEmpty):
-        photo = await download_file(
-            "https://telegra.ph/file/b9db32457eba4e42e70f7.jpg", "photoyins.jpg"
-        )
-        ll = await bot.upload_file(photo)
         try:
-            await bot(
-                EditPhotoRequest(int(channel), InputChatUploadedPhoto(ll))
+            photo = await download_file(
+                "https://telegra.ph/file/b9db32457eba4e42e70f7.jpg",
+                "photoyins.jpg",
             )
-        except BaseException as er:
-            LOGS.exception(er)
-    if not str(chat.id).startswith("-100"):
-        heroku_var["BOTLOG_CHATID"] = f"-100{str(chat.id)}"
-    else:
-        heroku_var["BOTLOG_CHATID"] = str(chat.id)
+            ll = await bot.upload_file(photo)
+            await bot(
+                EditPhotoRequest(
+                    int(channel),
+                    InputChatUploadedPhoto(ll),
+                )
+            )
+        except Exception as e:
+            LOGS.exception(e)
+
+    if heroku_var:
+        if str(chat.id).startswith("-100"):
+            heroku_var["BOTLOG_CHATID"] = str(chat.id)
+        else:
+            heroku_var["BOTLOG_CHATID"] = f"-100{chat.id}"
+
+    LOGS.info(f"BOTLOG_CHATID berhasil dibuat: {heroku_var['BOTLOG_CHATID']}")
+
 
 
 async def autobot():
