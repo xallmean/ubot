@@ -13,6 +13,7 @@ from telethon.errors import ChannelsTooMuchError
 from telethon.tl.functions.channels import CreateChannelRequest, EditPhotoRequest
 from telethon.tl.types import ChatPhotoEmpty, InputChatUploadedPhoto
 from telethon.utils import get_peer_id
+from telethon.errors import FloodWaitError
 
 from AyiinXd import (
     BOT_TOKEN,
@@ -112,7 +113,16 @@ async def autobot():
     else:
         username = f"jasebxall{(str(who.id))[5:]}bot"
     bf = "@BotFather"
-    await bot(UnblockRequest(bf))
+    while True:
+        try:
+            await bot(UnblockRequest(bf))
+            break
+        except FloodWaitError as e:
+            LOGS.info(f"Floodwait {e.seconds}s, menunggu...")
+            await asyncio.sleep(e.seconds)
+        except Exception as e:
+            LOGS.exception(e)
+            await asyncio.sleep(5)
     await bot.send_message(bf, "/cancel")
     await asyncio.sleep(1)
     await bot.send_message(bf, "/start")
